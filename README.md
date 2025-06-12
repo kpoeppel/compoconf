@@ -149,6 +149,24 @@ config = {
 
 - `parse_config(config_class, data, strict=True)`: Parse configuration data into typed objects
 
+## Enhanced Functionality
+
+### Parsing Module
+
+The parsing module has been enhanced to provide more robust and flexible configuration parsing capabilities. Key improvements include:
+
+-   Improved handling of nested configurations and unions.
+-   Enhanced type validation and error reporting.
+-   Support for parsing configurations from various data sources (e.g., JSON, YAML).
+
+### Util Module
+
+The util module now includes powerful utilities for dynamic configuration and validation:
+
+-   `partial_call`: Enables the creation of configurable classes from functions, allowing for dynamic modification of function arguments through configuration.
+-   `from_annotations`: Simplifies the creation of configurable classes by automatically extracting configuration parameters from class annotations.
+-   `validate_literal_field` and `assert_check_literals`: Provide mechanisms for validating Literal type annotations in dataclasses, ensuring that configuration values are within the allowed set of options.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
