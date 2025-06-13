@@ -30,7 +30,7 @@ jobs:
 
       - name: Verify version matches tag
         run: |
-          VERSION=$(grep "version = " pyproject.toml | cut -d '"' -f 2)
+          VERSION=v$(grep "version = " pyproject.toml | cut -d '"' -f 2 | head -n 1)
           TAG_NAME=${GITHUB_REF#refs/tags/}
           if [[ "$VERSION" != "$TAG_NAME" ]]; then
             echo "Version '$VERSION' in pyproject.toml does not match tag '$TAG_NAME'"
