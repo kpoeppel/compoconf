@@ -28,9 +28,18 @@ jobs:
         run: |
           python -m build  # produces dist/*.whl and dist/*.tar.gz
 
+      - name: Verify version matches tag
+        run: |
+          VERSION=$(grep "version = " pyproject.toml | cut -d '"' -f 2)
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          if [[ "$VERSION" != "$TAG_NAME" ]]; then
+            echo "Version '$VERSION' in pyproject.toml does not match tag '$TAG_NAME'"
+            exit 1
+          fi
+
       - name: Publish to PyPI
         env:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           # If you want to skip already-existing versions, you may check tag vs version. 
-          python -m twine upload --non-interactive dist/*
+          python -m twine upload --verbose --non-interactive dist/*
