@@ -14,17 +14,23 @@ T_co = TypeVar("T_co", covariant=True)
 ConfigT = TypeVar("ConfigT", bound="DynamicConfig")
 
 
+class MissingValue:
+    pass
+
+
+class LiteralError(BaseException):
+    pass
+
+
 @runtime_checkable
 class DynamicConfig(Protocol):
     """Protocol for dynamic config objects that support attribute access."""
 
     class_name: str
 
-    def __getattr__(self, name: str) -> Any:
-        ...
+    def __getattr__(self, name: str) -> Any: ...
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        ...
+    def __setattr__(self, name: str, value: Any) -> None: ...
 
 
 @runtime_checkable
@@ -33,8 +39,7 @@ class ConfigurableCallable(Protocol[T_co]):
 
     config: DynamicConfig
 
-    def __call__(self, *args: Any, **kwargs: Any) -> T_co:
-        ...
+    def __call__(self, *args: Any, **kwargs: Any) -> T_co: ...
 
 
 # Template classes defined at module level
@@ -528,17 +533,15 @@ def validate_literal_field(obj, field_name):
 
 
 def assert_check_literals(obj):
-    """Validates if the value of all Literal field in a dataclass object are
+    """
+    Validates if the value of all Literal field in a dataclass object are
     within the allowed Literal options defined in their type annotations.
 
     Args:
         obj: The dataclass object to validate.
 
-    Returns:
-        bool: True if the field value is valid, False otherwise.
-
     Raises:
-        ValueError: If the field is not defined or not annotated with Literal.
+        compoconf.LiteralError: If the field is not defined or not annotated with Literal.
         TypeError: If the object is not a dataclass instance.
     """
     if not is_dataclass(obj):
@@ -546,6 +549,7 @@ def assert_check_literals(obj):
 
     type_hints = get_type_hints(type(obj))
 
+    errors = []
     for field_name in type_hints:
         field_type = type_hints[field_name]
         # Check if the type is a Literal
@@ -553,7 +557,10 @@ def assert_check_literals(obj):
             allowed_values = field_type.__args__
             current_value = getattr(obj, field_name)
             if current_value not in allowed_values:
-                raise AssertionError(
-                    f"In dataclass {type(obj)}: The field {field_name} has a value {current_value} "
-                    f"not in {allowed_values} defined by Literal annotation."
-                )
+                errors.append((field_name, current_value, allowed_values))
+    if errors:
+        field_names, values, allowed_values = zip(*errors)
+        raise LiteralError(
+            f"In dataclass {type(obj)}: The field {field_names} has a value {values} "
+            f"not in {allowed_values} defined by Literal annotation."
+        )

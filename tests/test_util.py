@@ -568,7 +568,7 @@ def test_assert_check_literals():
     """Test assert_check_literals function"""
     from typing import Literal  # pylint: disable=C0415
 
-    from compoconf.util import assert_check_literals  # pylint: disable=C0415
+    from compoconf.util import assert_check_literals, LiteralError  # pylint: disable=C0415
 
     @dataclass
     class ConfigWithLiterals:
@@ -582,7 +582,7 @@ def test_assert_check_literals():
 
     # Test with invalid value
     config.mode = "invalid"  # type: ignore
-    with pytest.raises(AssertionError, match="not in"):
+    with pytest.raises(LiteralError, match="not in"):
         assert_check_literals(config)
 
     # Reset to valid value
@@ -590,7 +590,7 @@ def test_assert_check_literals():
 
     # Test another invalid value
     config.level = 4  # type: ignore
-    with pytest.raises(AssertionError, match="not in"):
+    with pytest.raises(LiteralError, match="not in"):
         assert_check_literals(config)
 
     # Test with non-dataclass object

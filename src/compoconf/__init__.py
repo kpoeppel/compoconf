@@ -20,6 +20,8 @@ from .util import (
     make_dataclass_picklable,
     partial_call,
     validate_literal_field,
+    LiteralError,
+    MissingValue,
 )
 
 __version__ = "0.1.0"
@@ -37,4 +39,6 @@ __all__ = [
     "make_dataclass_picklable",
     "assert_check_literals",
     "validate_literal_field",
+    "LiteralError",
+    "MissingValue",
 ]
