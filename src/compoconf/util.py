@@ -22,6 +22,10 @@ class LiteralError(BaseException):
     pass
 
 
+class ConfigError(BaseException):
+    pass
+
+
 @runtime_checkable
 class DynamicConfig(Protocol):
     """Protocol for dynamic config objects that support attribute access."""
