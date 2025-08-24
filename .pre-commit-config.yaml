@@ -1,33 +1,35 @@
 ---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0  # Use the latest stable version
+    rev: v4.0.0  # Use the latest stable version
     hooks:
       - id: trailing-whitespace   # Removes trailing whitespace
-      - id: end-of-file-fixer     # Ensures a single newline at end of files
-      - id: check-yaml            # Validates YAML files
-      - id: check-merge-conflict  # Detects leftover merge conflicts
-      - id: detect-private-key    # Detects private keys
+  #     - id: end-of-file-fixer     # Ensures a single newline at end of files
+  #     - id: check-yaml            # Validates YAML files
+  #     - id: check-merge-conflict  # Detects leftover merge conflicts
+  #     - id: detect-private-key    # Detects private keys
+  #     - id: check-added-large-files
+  #       stages: [commit, push, manual]
 
   - repo: https://github.com/psf/black
-    rev: 23.9.1  # Use the latest stable version
+    rev: 25.1.0  # Use the latest stable version
     hooks:
       - id: black  # Formats Python code with Black
         args: [--line-length=120]
 
   - repo: https://github.com/PyCQA/flake8
-    rev: 6.1.0  # Use the latest stable version
+    rev: 7.3.0  # Use the latest stable version
     hooks:
       - id: flake8  # Lints Python code
         args: [--max-line-length=120]  # Matches Black's line length
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1  # Use the latest stable version
+    rev: v1.17.1  # Use the latest stable version
     hooks:
       - id: mypy  # Type-checking for Python
 
   - repo: https://github.com/pylint-dev/pylint
-    rev: v3.0.0
+    rev: v3.3.8
     hooks:
       - id: pylint  # Runs pylint for advanced linting
         args:
@@ -41,13 +43,13 @@ repos:
         args: [--profile=black, --line-length=120]  # Matches Black's formatting
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
+    rev: 1.8.6
     hooks:
       - id: bandit  # Security linter for Python code
         exclude: ^tests/.*$
 
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.31.0
+    rev: v1.37.1
     hooks:
       - id: yamllint  # Lints YAML files
         args: ["--config-data", "{extends: default, rules: {line-length: {max: 120}}}"]

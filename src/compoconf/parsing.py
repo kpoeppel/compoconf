@@ -15,7 +15,7 @@ if sys.version_info >= (3, 10):
     from types import UnionType
     from typing import Union
 else:
-    from typing import Union
+    from typing import Union  # ignore: W0404
     from typing import Union as UnionType
 
 try:
@@ -111,9 +111,11 @@ def _recursive_type_unwrapping(typ) -> list[type]:
     return (
         [core_typ for sub_typ in typ.__constraints__ for core_typ in _recursive_type_unwrapping(sub_typ)]
         if hasattr(typ, "__constraints__")
-        else [core_typ for sub_typ in typ.__args__ for core_typ in _recursive_type_unwrapping(sub_typ)]
-        if hasattr(typ, "__args__")
-        else [typ]
+        else (
+            [core_typ for sub_typ in typ.__args__ for core_typ in _recursive_type_unwrapping(sub_typ)]
+            if hasattr(typ, "__args__")
+            else [typ]
+        )
     )
 
 
@@ -202,7 +204,7 @@ def _handle_none_case(config_class, data):
     return data
 
 
-def parse_config(config_class, data, strict: bool = True):
+def parse_config(config_class: type, data: Any, strict: bool = True):
     """
     Parse a dictionary of configuration data into a strongly typed configuration object.
 
@@ -287,7 +289,7 @@ def dump_config(a: Any) -> Any:
     Returns:
         A pure python structure (that can be dumped to yaml/json).
     """
-    if is_dataclass(a):
+    if is_dataclass(a) and not isinstance(a, type):
         return asdict(a)
     if hasattr(a, "items"):
         return {k: dump_config(v) for k, v in a.items()}

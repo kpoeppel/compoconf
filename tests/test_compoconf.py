@@ -1,6 +1,7 @@
 """
 Tests for CompoConf
 """
+
 # pylint: disable=R0801
 
 import json
@@ -469,6 +470,15 @@ def test_config_interface_to_dict():
     assert result["name"] == "dict_test"
     assert result["nested"] == {"a": 1, "b": 2}
     assert result["class_name"] == ""  # Default value
+
+
+def test_invalid_registry_class_type(reset_registry):
+    """Test that a class with an invalid config type raises an error."""
+    with pytest.raises(RuntimeError, match="Tried to create registry"):
+
+        @register_interface
+        class InvalidConfigInterface:
+            pass
 
 
 # pylint: enable=C0115

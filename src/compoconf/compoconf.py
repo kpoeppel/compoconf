@@ -165,6 +165,11 @@ class _RegistrySingleton:
         LOGGER.debug(f"Adding registry for class {self._unique_name(cls)}")
         if self._unique_name(cls) in self._registries:
             LOGGER.warning(f"Tried to re-register registry with interface name {self._unique_name(cls)}")
+        if RegistrableConfigInterface not in cls.__mro__:
+            raise RuntimeError(
+                f"Tried to create registry for {self._unique_name(cls)} that doesn't inherit from "
+                "RegistrableConfigInterface"
+            )
         self._registries[self._unique_name(cls)] = {}
         self._registry_classes[self._unique_name(cls)] = cls
 
