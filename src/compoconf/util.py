@@ -15,15 +15,24 @@ ConfigT = TypeVar("ConfigT", bound="DynamicConfig")
 
 
 class MissingValue:
-    pass
+    """
+    A singular type that represents a MissingValue that can be replaced in the
+    __post_init__ of a dataclass (unlike dataclasses.MISSING), but should
+    ultimately raise ConfigError if not set.
+    """
 
 
-class LiteralError(BaseException):
-    pass
+class LiteralError(ValueError):
+    """
+    A ValueError representing a bad value of a Literal type.
+    """
 
 
-class ConfigError(BaseException):
-    pass
+class ConfigError(ValueError):
+    """
+    A ValueError representing a bad configuration recognized in the __post_init__
+    of a dataclass.
+    """
 
 
 @runtime_checkable
@@ -201,6 +210,7 @@ def partial_call(  # pylint: disable=R0913
     fun: Callable[..., T_co],
     class_name: str,
     reg: type[RegistrableConfigInterface],
+    *,
     pass_args: Optional[list[int]] = None,
     pass_kwargs: Optional[list[str]] = None,
     cfg_args: Optional[list[int]] = None,
@@ -366,6 +376,7 @@ def from_annotations(  # pylint: disable=R0913
     cls: type[T_co],
     class_name: str,
     reg: type[RegistrableConfigInterface],
+    *,
     pass_args: Optional[list[int]] = None,
     pass_kwargs: Optional[list[str]] = None,
     cfg_args: Optional[list[int]] = None,
