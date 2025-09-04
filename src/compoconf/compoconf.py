@@ -38,8 +38,10 @@ Example:
 """
 
 import logging
-from dataclasses import MISSING, asdict, dataclass, field, fields
+from dataclasses import dataclass, field
 from typing import Any, List, Optional, Type, TypeVar, get_type_hints
+
+from compoconf.nonstrict_dataclass import asdict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -306,68 +308,6 @@ def register_interface(cls):
 
 
 @dataclass
-class NonStrictDataclass:
-    """
-    Dataclass Interface that allows for non-strict behavior, so it can be extended with extra
-    keyword arguments on initialization.
-    Note that for an inheriting class, one must use @dataclass(init=False) as decorator.
-
-    Example:
-
-    >>> @dataclass(init=False)
-    ... class MyDataclass(NonStrictDataclass):
-    ...     a: int
-    >>> obj = MyDataclass(a=1, b=2)
-    >>> obj.b
-    2
-    """
-
-    _extras: dict = field(default_factory=dict, init=False, repr=False)
-    _non_strict: bool = True
-
-    def __init__(self, *args, **kwargs):
-        # look at *runtime* class so this also sees subclass fields
-        declared = [f for f in fields(type(self)) if f.init]
-        idx = [idx for idx, f in enumerate(declared) if f.name == "_non_strict"][0]
-        declared = declared[:idx] + declared[(idx + 1) :] + [declared[idx]]
-        declared_names = {f.name for f in declared}
-
-        # split kwargs into declared vs extras
-        init_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in declared_names}
-        extra_kwargs = kwargs
-
-        # assign declared fields (replicates dataclass auto-init)
-        for f, val in zip(declared, args):
-            setattr(self, f.name, val)
-        for f in declared[len(args) :]:
-            if f.name in init_kwargs:
-                setattr(self, f.name, init_kwargs[f.name])
-            elif f.default is not MISSING:
-                setattr(self, f.name, f.default)
-            elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
-                setattr(self, f.name, f.default_factory())  # type: ignore[attr-defined]
-            else:
-                raise TypeError(f"Missing required argument: {f.name}")
-
-        # stash and attach extras
-        self._extras = extra_kwargs
-        for k, v in extra_kwargs.items():
-            setattr(self, k, v)
-
-    def to_dict(self, *, extras_key=None, **kwargs):
-        """
-        Convert the NonStrictDataclass to a dictionary including the extra attributes.
-        """
-        d = asdict(self, **kwargs)
-        del d["_extras"]
-        if extras_key is None:
-            d.update(self._extras)
-        else:
-            d[extras_key] = dict(self._extras)
-        return d
-
-
-@dataclass
 class ConfigInterface:
     """
     Base class for configuration dataclasses in the CompoConf system.
@@ -418,11 +358,11 @@ class ConfigInterface:
             raise ValueError(f"Configuration class {self.__class__} has no instantiation class.")
         return Registry.get_class(interface_class, self.class_name)(self, *args, **kwargs)
 
-    def to_dict(self):
+    def _to_dict(self):
         """
         Returns a PyTree / dictionary of the config via dataclasses.asdict.
 
         Returns:
             Dictionary containing the dataclass object attributes.
         """
-        return asdict(self)
+        return asdict(self, use_to_dict=False)

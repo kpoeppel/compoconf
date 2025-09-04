@@ -656,6 +656,62 @@ def test_get_all_annotations():
     assert annotations["b"] is str
 
 
+def test_parse_config_with_non_strict_dataclass():
+    """Test parse_config with NonStrictDataclass and extra fields."""
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class MyNonStrictConfig(NonStrictDataclass):
+        typed_field: int
+        default_field: str = "default"
+
+    # Data with typed fields and extra untyped fields
+    data_with_extras = {
+        "typed_field": 123,
+        "default_field": "overridden",
+        "extra_field_1": "some_value",
+        "extra_field_2": 456,
+    }
+
+    # Test parsing with strict=True (should still allow extras due to _non_strict)
+    parsed_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=True)
+    assert isinstance(parsed_strict, MyNonStrictConfig)
+    assert parsed_strict.typed_field == 123
+    assert parsed_strict.default_field == "overridden"
+    # Check that extra fields are accessible as attributes
+    assert parsed_strict.extra_field_1 == "some_value"
+    assert parsed_strict.extra_field_2 == 456
+    # Check that extra fields are stored in _extras
+    assert parsed_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
+
+    # Test parsing with strict=False (should also allow extras)
+    parsed_non_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=False)
+    assert isinstance(parsed_non_strict, MyNonStrictConfig)
+    assert parsed_non_strict.typed_field == 123
+    assert parsed_non_strict.default_field == "overridden"
+    assert parsed_non_strict.extra_field_1 == "some_value"
+    assert parsed_non_strict.extra_field_2 == 456
+    assert parsed_non_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
+
+    # Test parsing with only typed fields
+    data_typed_only = {"typed_field": 789}
+    parsed_typed_only = parse_config(MyNonStrictConfig, data_typed_only)
+    assert isinstance(parsed_typed_only, MyNonStrictConfig)
+    assert parsed_typed_only.typed_field == 789
+    assert parsed_typed_only.default_field == "default"
+    assert parsed_typed_only._extras == {}
+
+    # Test parsing with missing required field (should raise error)
+    data_missing_required = {"default_field": "value"}
+    with pytest.raises(TypeError):
+        parse_config(MyNonStrictConfig, data_missing_required)
+
+    # Test parsing with extra fields that are not in _extras (should be handled by NonStrictDataclass __init__)
+    # The _handle_dataclass logic in parsing.py should correctly pass these to the NonStrictDataclass constructor.
+    # The NonStrictDataclass constructor then assigns them to attributes and stores them in _extras.
+    # So, the above tests already cover this implicitly.
+
+
 # pylint: enable=C0115
 # pylint: enable=C0116
 # pylint: enable=W0212

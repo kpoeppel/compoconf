@@ -13,6 +13,7 @@ from .compoconf import (  # pylint: disable=W0406
     register,
     register_interface,
 )
+from .nonstrict_dataclass import NonStrictDataclass, asdict
 from .parsing import dump_config, parse_config
 from .util import (
     ConfigError,
@@ -28,6 +29,8 @@ from .util import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "NonStrictDataclass",
+    "asdict",
     "RegistrableConfigInterface",
     "ConfigInterface",
     "Registry",

@@ -6,10 +6,12 @@ and parse it to a compoconf config structure, or vice versa.
 import logging
 import sys
 from collections.abc import Sequence
-from dataclasses import asdict, is_dataclass
+from dataclasses import is_dataclass
 from typing import Any, Dict, List, Literal
 from typing import Sequence as tSequence
 from typing import Tuple, TypeVar, get_args, get_origin, get_type_hints
+
+from compoconf.nonstrict_dataclass import asdict
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -22,6 +24,7 @@ try:
     from omegaconf import ListConfig
 except ImportError:
     ListConfig = list
+
 
 LOGGER = logging.getLogger(__name__)
 
