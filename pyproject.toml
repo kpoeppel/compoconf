@@ -71,7 +71,6 @@ omit = [
 line-length = 120
 target-version = ["py310"]
 include = '\.pyi?$'
-ignore_errors = "e203"
 
 [tool.isort]
 profile = "black"
