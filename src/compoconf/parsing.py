@@ -164,6 +164,12 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True) -> Any
 
     remaining_keys = set(data).difference(set(dataclass_dict))
     remaining_keys.discard("class_name")
+
+    # override remaining keys for non strict dataclasses
+    if hasattr(config_class, "_non_strict") and config_class._non_strict:  # pylint: disable=W0212
+        dataclass_dict.update({rk: data[rk] for rk in data})
+        remaining_keys = set()
+
     if remaining_keys and strict:
         raise ValueError(
             f"Undefined keys {remaining_keys} in data for {config_class}: {list(_get_all_annotations(config_class))}"

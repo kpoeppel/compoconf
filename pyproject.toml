@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "compoconf"
-version = "0.1.4"
+version = "0.1.5"
 description = "A compositional configuration library for Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -71,6 +71,7 @@ omit = [
 line-length = 120
 target-version = ["py310"]
 include = '\.pyi?$'
+ignore_errors = "e203"
 
 [tool.isort]
 profile = "black"

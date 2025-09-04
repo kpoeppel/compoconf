@@ -137,6 +137,23 @@ def test_parse_config_none():
         parse_config(None, "not none")
 
 
+def test_parse_config_none_dataclass():
+    @dataclass
+    class TestConfig:
+        a: int = 1
+
+    with pytest.raises(ValueError):
+        parse_config(TestConfig, None)
+
+
+def test_parse_config_dataclass_in_dataclass():
+    @dataclass
+    class TestConfig:
+        a: int = 1
+
+    assert parse_config(TestConfig, TestConfig(a=2)) == TestConfig(a=2)
+
+
 def test_parse_config_invalid_type():
     with pytest.raises(TypeError):
         parse_config("not a type", {})

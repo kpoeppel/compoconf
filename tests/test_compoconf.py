@@ -10,7 +10,14 @@ from typing import Dict
 
 import pytest  # pylint: disable=E0401
 
-from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, Registry, register, register_interface
+from compoconf.compoconf import (
+    ConfigInterface,
+    NonStrictDataclass,
+    RegistrableConfigInterface,
+    Registry,
+    register,
+    register_interface,
+)
 
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613,C0415,W0612
@@ -479,6 +486,167 @@ def test_invalid_registry_class_type(reset_registry):
         @register_interface
         class InvalidConfigInterface:
             pass
+
+
+# Tests for NonStrictDataclass
+def test_non_strict_dataclass_basic_instantiation():
+    """Test basic instantiation and attribute access of NonStrictDataclass."""
+
+    @dataclass(init=False)
+    class MyNonStrictDataclass(NonStrictDataclass):
+        a: int
+        b: str = "default_b"
+
+    # Test instantiation with typed and untyped fields
+    instance = MyNonStrictDataclass(a=1, c="extra_c", d=3.14)
+
+    # Verify typed fields
+    assert instance.a == 1
+    assert instance.b == "default_b"
+
+    # Verify untyped fields
+    assert instance.c == "extra_c"  # pylint: disable=E1101
+    assert instance.d == 3.14  # pylint: disable=E1101
+
+    # Verify that extra fields are stored in _extras
+    assert instance._extras == {"c": "extra_c", "d": 3.14}
+
+    # Test instantiation with only typed fields
+    instance_typed_only = MyNonStrictDataclass(a=2)
+    assert instance_typed_only.a == 2
+    assert instance_typed_only.b == "default_b"
+    assert not instance_typed_only._extras
+
+    # Test instantiation with explicit default override
+    instance_override_default = MyNonStrictDataclass(a=3, b="overridden_b")
+    assert instance_override_default.a == 3
+    assert instance_override_default.b == "overridden_b"
+    assert not instance_override_default._extras
+
+    # Test instantiation with extra fields and explicit default override
+    instance_extra_override = MyNonStrictDataclass(a=4, b="overridden_b", e="extra_e")
+    assert instance_extra_override.a == 4
+    assert instance_extra_override.b == "overridden_b"
+    assert instance_extra_override.e == "extra_e"  # pylint: disable=E1101
+    assert instance_extra_override._extras == {"e": "extra_e"}
+
+
+def test_non_strict_dataclass_instantiation_missing():
+    """Test basic instantiation and attribute access of NonStrictDataclass."""
+    from dataclasses import MISSING
+
+    @dataclass(init=False)
+    class MyNonStrictDataclass1(NonStrictDataclass):
+        a: int = MISSING
+        c1: str = field(default=MISSING)
+        d1: str = field(default_factory=MISSING)
+        b: str = "a"
+        c2: str = field(default="c2")
+        d2: str = field(default_factory=lambda: "abc")
+
+    # Test instantiation with typed and untyped fields
+    instance = MyNonStrictDataclass1(1, "c1", "d1", b="b", e="bcd")
+    assert instance.to_dict() == {
+        "a": 1,
+        "b": "b",
+        "c1": "c1",
+        "c2": "c2",
+        "d1": "d1",
+        "d2": "abc",
+        "e": "bcd",
+        "_non_strict": True,
+    }
+
+    with pytest.raises(TypeError):
+        _ = MyNonStrictDataclass1(a=1, c1="c1")
+
+
+def test_non_strict_dataclass_to_dict():
+    """Test the to_dict method of NonStrictDataclass."""
+
+    @dataclass(init=False)
+    class MyNonStrictDataclass2(NonStrictDataclass):
+        a: int
+        b: str = "default_b"
+
+    instance = MyNonStrictDataclass2(a=1, c="extra_c", d=3.14)
+
+    # Test to_dict without extras_key
+    dict_representation = instance.to_dict()
+    assert dict_representation == {"a": 1, "b": "default_b", "c": "extra_c", "d": 3.14, "_non_strict": True}
+
+    # Test to_dict with extras_key
+    dict_representation_with_key = instance.to_dict(extras_key="extra_data")
+    assert dict_representation_with_key == {
+        "a": 1,
+        "b": "default_b",
+        "extra_data": {"c": "extra_c", "d": 3.14},
+        "_non_strict": True,
+    }
+
+    # Test to_dict with an instance that has no extra fields
+    instance_no_extras = MyNonStrictDataclass2(a=2)
+    dict_no_extras = instance_no_extras.to_dict()
+    assert dict_no_extras == {"a": 2, "b": "default_b", "_non_strict": True}
+
+    dict_no_extras_with_key = instance_no_extras.to_dict(extras_key="extra_data")
+    assert dict_no_extras_with_key == {"a": 2, "b": "default_b", "extra_data": {}, "_non_strict": True}
+
+
+def test_parse_config_with_non_strict_dataclass():
+    """Test parse_config with NonStrictDataclass and extra fields."""
+    from compoconf.parsing import parse_config
+
+    @dataclass(init=False)
+    class MyNonStrictConfig(NonStrictDataclass):
+        typed_field: int
+        default_field: str = "default"
+
+    # Data with typed fields and extra untyped fields
+    data_with_extras = {
+        "typed_field": 123,
+        "default_field": "overridden",
+        "extra_field_1": "some_value",
+        "extra_field_2": 456,
+    }
+
+    # Test parsing with strict=True (should still allow extras due to _non_strict)
+    parsed_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=True)
+    assert isinstance(parsed_strict, MyNonStrictConfig)
+    assert parsed_strict.typed_field == 123
+    assert parsed_strict.default_field == "overridden"
+    # Check that extra fields are accessible as attributes
+    assert parsed_strict.extra_field_1 == "some_value"
+    assert parsed_strict.extra_field_2 == 456
+    # Check that extra fields are stored in _extras
+    assert parsed_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
+
+    # Test parsing with strict=False (should also allow extras)
+    parsed_non_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=False)
+    assert isinstance(parsed_non_strict, MyNonStrictConfig)
+    assert parsed_non_strict.typed_field == 123
+    assert parsed_non_strict.default_field == "overridden"
+    assert parsed_non_strict.extra_field_1 == "some_value"
+    assert parsed_non_strict.extra_field_2 == 456
+    assert parsed_non_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
+
+    # Test parsing with only typed fields
+    data_typed_only = {"typed_field": 789}
+    parsed_typed_only = parse_config(MyNonStrictConfig, data_typed_only)
+    assert isinstance(parsed_typed_only, MyNonStrictConfig)
+    assert parsed_typed_only.typed_field == 789
+    assert parsed_typed_only.default_field == "default"
+    assert parsed_typed_only._extras == {}
+
+    # Test parsing with missing required field (should raise error)
+    data_missing_required = {"default_field": "value"}
+    with pytest.raises(TypeError):
+        parse_config(MyNonStrictConfig, data_missing_required)
+
+    # Test parsing with extra fields that are not in _extras (should be handled by NonStrictDataclass __init__)
+    # The _handle_dataclass logic in parsing.py should correctly pass these to the NonStrictDataclass constructor.
+    # The NonStrictDataclass constructor then assigns them to attributes and stores them in _extras.
+    # So, the above tests already cover this implicitly.
 
 
 # pylint: enable=C0115
