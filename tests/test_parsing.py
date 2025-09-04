@@ -712,6 +712,25 @@ def test_parse_config_with_non_strict_dataclass():
     # So, the above tests already cover this implicitly.
 
 
+def test_parse_nonstrict_nested_typed():
+    """Test checking that dataclasses are still resolved for parsing in the NonStrict case"""
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Inner(NonStrictDataclass):
+        b: int = 2
+
+    @dataclass(init=False)
+    class Outer(NonStrictDataclass):
+        a: int = 1
+        b: Inner = field(default_factory=Inner)
+
+    cfg = parse_config(Outer, {"a": 2, "b": {"b": 3}})
+    assert isinstance(cfg.b, Inner)
+    assert cfg.b.b == 3
+    assert cfg.a == 2
+
+
 # pylint: enable=C0115
 # pylint: enable=C0116
 # pylint: enable=W0212

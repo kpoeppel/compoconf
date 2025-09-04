@@ -170,7 +170,7 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True) -> Any
 
     # override remaining keys for non strict dataclasses
     if hasattr(config_class, "_non_strict") and config_class._non_strict:  # pylint: disable=W0212
-        dataclass_dict.update({rk: data[rk] for rk in data})
+        dataclass_dict.update({rk: data[rk] for rk in data if rk not in dataclass_dict})
         remaining_keys = set()
 
     if remaining_keys and strict:
