@@ -25,10 +25,9 @@ class NonStrictDataclass:
     """
 
     _extras: dict = field(default_factory=dict, init=False, repr=False)
-    _non_strict: bool = False  # is switched in init for later checks if init was overridden
+    _non_strict: bool = True
 
     def __init__(self, *args, **kwargs):
-        self._non_strict = True
         # look at *runtime* class so this also sees subclass fields
         declared = [f for f in fields(type(self)) if f.init]
         idx = [idx for idx, f in enumerate(declared) if f.name == "_non_strict"][0]
@@ -56,6 +55,7 @@ class NonStrictDataclass:
         self._extras = extra_kwargs
         for k, v in extra_kwargs.items():
             setattr(self, k, v)
+        self._non_strict = True
 
     def _to_dict(self, *, extras_key=None):
         """
