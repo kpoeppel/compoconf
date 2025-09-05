@@ -56,6 +56,12 @@ class NonStrictDataclass:
         for k, v in extra_kwargs.items():
             setattr(self, k, v)
         self._non_strict = True
+        self.__post_init__()
+
+    def __post_init__(self):
+        """
+        Post init functionality like for dataclasses.
+        """
 
     def _to_dict(self, *, extras_key=None):
         """

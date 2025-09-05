@@ -579,3 +579,29 @@ def assert_check_literals(obj):
             f"In dataclass {type(obj)}: The field {field_names} has a value {values} "
             f"not in {allowed_values} defined by Literal annotation."
         )
+
+
+def assert_check_nonmissing(obj):
+    """
+    Validates if the value of all Literal field in a dataclass object are
+    within the allowed Literal options defined in their type annotations.
+
+    Args:
+        obj: The dataclass object to validate.
+
+    Raises:
+        compoconf.ConfigError: If the field is not defined or not annotated with Literal.
+        TypeError: If the object is not a dataclass instance.
+    """
+    if not is_dataclass(obj):
+        raise TypeError(f"The provided object {obj} is not a dataclass instance.")
+
+    type_hints = get_type_hints(type(obj))
+
+    errors = []
+    for field_name in type_hints:
+        # Check if the value is still MissingValue
+        if getattr(obj, field_name) is MissingValue:
+            errors.append(field_name)
+    if errors:
+        raise ConfigError(f"In dataclass {type(obj)}: The fields {errors} have MissingValue as value.")

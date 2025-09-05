@@ -1,11 +1,16 @@
 """Tests for CompoConf utilities"""
+
 # pylint: disable=R0801
 
 from dataclasses import dataclass, field
 from typing import Union
 
 import pytest  # pylint: disable=E0401
-from typing_extensions import dataclass_transform
+
+try:
+    from typing_extensions import dataclass_transform
+except ImportError:
+    pass
 
 from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, Registry, register_interface
 from compoconf.util import from_annotations, partial_call
@@ -568,7 +573,7 @@ def test_assert_check_literals():
     """Test assert_check_literals function"""
     from typing import Literal  # pylint: disable=C0415
 
-    from compoconf.util import assert_check_literals, LiteralError  # pylint: disable=C0415
+    from compoconf.util import LiteralError, assert_check_literals  # pylint: disable=C0415
 
     @dataclass
     class ConfigWithLiterals:
@@ -626,6 +631,25 @@ def test_annotated_template_class_getitem():
     # Check that it has the expected attributes
     assert hasattr(SpecializedTemplate, "__orig_class__")
     assert SpecializedTemplate.__orig_class__ == _AnnotatedTemplate
+
+
+def test_assert_check_nonmissing():
+    from compoconf.util import ConfigError, MissingValue, assert_check_nonmissing  # pylint: disable=C0415
+
+    @dataclass
+    class TestClass5:
+        a: int = MissingValue
+
+        def __post_init__(self):
+            assert_check_nonmissing(self)
+
+    assert TestClass5(a=5).a == 5
+
+    with pytest.raises(ConfigError):
+        TestClass5()
+
+    with pytest.raises(TypeError):
+        assert_check_nonmissing(1)
 
 
 # pylint: enable=C0115

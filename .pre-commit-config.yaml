@@ -21,7 +21,7 @@ repos:
     rev: 7.3.0  # Use the latest stable version
     hooks:
       - id: flake8  # Lints Python code
-        args: ['--max-line-length=120', '--ignore=E203,W503']  # Matches Black's line length
+        args: ['--max-line-length=120', '--ignore=E203,W503,E704']  # Matches Black's line length
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.17.1  # Use the latest stable version

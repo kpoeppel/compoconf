@@ -8,6 +8,7 @@ from typing import Any
 import pytest  # pylint: disable=E0401
 
 from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
+from compoconf.util import MissingValue
 
 
 # Tests for NonStrictDataclass
@@ -118,6 +119,23 @@ def test_asdict_types():
         b: tuple[int, str] = (1, "1")
 
     assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"_non_strict": True, "a": [1, 2, 3], "b": (1, "1"), "c": (2, 3)}
+
+
+def test_post_init():
+    """Test __post_init__ for NonStrictDataclass"""
+
+    @dataclass(init=False)
+    class NonStrictWithPostInit(NonStrictDataclass):
+        """TestClass"""
+
+        a: int = MissingValue
+        b: str = "default_b"
+
+        def __post_init__(self):
+            if self.a is MissingValue:
+                self.a = 3
+
+    assert NonStrictWithPostInit(b="b", c="c").a == 3
 
 
 def test_non_strict_dataclass_to_dict():
