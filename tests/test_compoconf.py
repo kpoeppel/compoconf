@@ -449,6 +449,48 @@ def test_config_interface_reduce_setstate():
     assert new_config.name == "reduced"
 
 
+def test_classproperty_direct_callable():
+    from compoconf.compoconf import classproperty  # pylint: disable=C0415
+
+    class Example:
+        @classproperty
+        def value(cls):  # pylint: disable=E0213
+            return "value"
+
+    assert Example.value == "value"  # pylint: disable=W0143
+
+
+def test_classproperty_without_wrapped():
+    from compoconf.compoconf import classproperty
+
+    class Dummy:
+        fget = object()
+
+    result = classproperty.__get__(Dummy(), None, type("Owner", (), {}))
+    assert result is None
+
+
+def test_reregistration_warning_when_replacing_class(reset_registry, caplog):
+    @register_interface
+    class BaseInterface(RegistrableConfigInterface):
+        pass
+
+    @dataclass
+    class ExampleConfig(ConfigInterface):
+        value: int = 1
+
+    @register
+    class Original(BaseInterface):
+        config: ExampleConfig
+
+    replacement = type("Original", (BaseInterface,), {"config": ExampleConfig})
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        Registry._reregistration_warnings(ExampleConfig, replacement, "Original", BaseInterface)
+
+    assert "Re-Registering Original" in caplog.text
+
+
 def test_config_interface_to_dict():
     """Test ConfigInterface.to_dict method."""
 

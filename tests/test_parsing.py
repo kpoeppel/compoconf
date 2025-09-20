@@ -3,7 +3,7 @@ Parsing Tests for CompoConf.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, Union
 
 import pytest  # pylint: disable=E0401
 
@@ -244,6 +244,31 @@ def test_parse_config_collections(reset_registry):
         parse_config(Tuple, data_tuple)
 
 
+def test_parse_config_sets():
+    # Test parsing into sets
+    result = parse_config(Set[int], ["1", 2, 3])
+    assert result == {1, 2, 3}
+
+    result = parse_config(set[int], [1, 2, 2])
+    assert result == {1, 2}
+
+    # Test parsing into frozensets
+    result = parse_config(FrozenSet[str], ["a", "b"])
+    assert result == frozenset({"a", "b"})
+
+    result = parse_config(frozenset[str], ("x", "y"))
+    assert result == frozenset({"x", "y"})
+
+    with pytest.raises(ValueError, match="Expected set"):
+        parse_config(Set[int], "not a set")
+
+    with pytest.raises(ValueError, match="Set type must have exactly 1 type argument"):
+        parse_config(Set, [1, 2])
+
+    with pytest.raises(ValueError, match="0"):
+        parse_config(Set[int], ["not_int"])
+
+
 def test_parse_config_union_types(reset_registry):
     @dataclass
     class Config1:
@@ -318,6 +343,66 @@ def test_parse_config_edge_cases(reset_registry):
         parse_config("abc", "abc")
 
     assert parse_config(Literal["abc"], "abc") == "abc"
+
+
+def test_parse_bool_handling():
+    @dataclass
+    class BoolConfig:
+        flag: bool
+
+    assert parse_config(bool, True) is True
+    assert parse_config(bool, " true ") is True
+    assert parse_config(BoolConfig, {"flag": False}).flag is False
+    assert parse_config(BoolConfig, {"flag": "FALSE"}).flag is False
+
+
+def test_parse_bool_error_contains_key_history():
+    @dataclass
+    class InnerConfig:
+        flag: bool
+
+    @dataclass
+    class OuterConfig:
+        inner: InnerConfig
+
+    with pytest.raises(ValueError, match="inner.flag"):
+        parse_config(OuterConfig, {"inner": {"flag": "not_bool"}})
+
+
+def test_parse_bool_invalid_input():
+    with pytest.raises(ValueError, match="Could not parse 1"):
+        parse_config(bool, 1)
+
+
+def test_parse_config_empty_key_path():
+    result = parse_config(Dict[str, int], {"": 1})
+    assert result[""] == 1
+
+
+def test_parsing_without_omegaconf(monkeypatch):
+    import importlib  # pylint: disable=C0415
+    import sys  # pylint: disable=C0415
+    import types  # pylint: disable=C0415
+
+    original_omegaconf = sys.modules.get("omegaconf", None)
+    original_parsing = sys.modules.pop("compoconf.parsing", None)
+
+    fake_module = types.ModuleType("omegaconf")
+    monkeypatch.setitem(sys.modules, "omegaconf", fake_module)
+
+    parsing_module = importlib.import_module("compoconf.parsing")
+    assert parsing_module.ListConfig is list
+
+    # restore environment
+    if original_omegaconf is not None:
+        sys.modules["omegaconf"] = original_omegaconf
+    else:
+        sys.modules.pop("omegaconf", None)
+
+    sys.modules.pop("compoconf.parsing", None)
+    if original_parsing is not None:
+        sys.modules["compoconf.parsing"] = original_parsing
+        importlib.reload(original_parsing)
 
 
 def test_parse_config_bad_class_name(reset_registry):

@@ -77,3 +77,5 @@ Utilities
 .. autofunction:: compoconf.validate_literal_field
 
 .. autofunction:: compoconf.assert_check_literals
+
+.. autofunction:: compoconf.assert_check_nonmissing

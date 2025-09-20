@@ -10,7 +10,7 @@ Development Installation
 
 .. code-block:: bash
 
-    git clone ssh://git@git.bioinf.jku.at:5792/poeppel/compoconf.git
+    git clone git@github.com:kpoeppel/compoconf.git
     cd compoconf
 
 2. Install development dependencies:

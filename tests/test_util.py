@@ -633,6 +633,87 @@ def test_annotated_template_class_getitem():
     assert SpecializedTemplate.__orig_class__ == _AnnotatedTemplate
 
 
+def test_partial_call_template_branch_paths():
+    from compoconf.util import _PartialCallTemplate  # pylint: disable=C0415
+
+    @dataclass
+    class SimpleConfig:
+        value: int = 3
+
+    class Template(_PartialCallTemplate):
+        _fun = staticmethod(lambda value=0: value)
+        _param_names = ["value"]
+        _param_indices = {"value": 0}
+        _pass_param_names = set()
+        _cfg_param_names = {"value"}
+
+    instance = Template(SimpleConfig())
+    assert instance() == 3
+
+    @dataclass
+    class MixedConfig:
+        provided: int = 4
+
+    class PassTemplate(_PartialCallTemplate):
+        _fun = staticmethod(lambda a=0, provided=0: a + provided)
+        _param_names = ["a", "provided"]
+        _param_indices = {"a": 0, "provided": 1}
+        _pass_param_names = {"a"}
+        _cfg_param_names = {"provided"}
+
+    instance_kw = PassTemplate(MixedConfig())
+    assert instance_kw(a=6) == 10
+
+    @dataclass
+    class EmptyConfig:
+        pass
+
+    class MissingTemplate(_PartialCallTemplate):
+        _fun = staticmethod(lambda missing=99: missing)
+        _param_names = ["missing"]
+        _param_indices = {"missing": 0}
+        _pass_param_names = set()
+        _cfg_param_names = {"missing"}
+
+    instance_missing = MissingTemplate(EmptyConfig())
+    assert instance_missing() == 99
+
+
+def test_annotated_template_branch_paths():
+    from compoconf.util import _AnnotatedTemplate  # pylint: disable=C0415
+
+    @dataclass
+    class AnnotConfig:
+        value: int = 2
+
+    class Wrapped:
+        def __init__(self, *, value=0):
+            self.value = value
+
+        def __call__(self, increment=0):
+            return self.value + increment
+
+    class Template(_AnnotatedTemplate):
+        _wrapped_cls = Wrapped
+        _params_to_add = {"value", "missing"}
+
+    wrapper = Template(AnnotConfig())
+    assert wrapper(increment=3) == 5
+
+    @dataclass
+    class ConfigWithClassName(ConfigInterface):
+        value: int = 7
+
+    ConfigWithClassName.class_name = "Wrapped"
+
+    class TemplateWithClassName(_AnnotatedTemplate):
+        _wrapped_cls = Wrapped
+        _params_to_add = {"value"}
+
+    wrapper_with_name = TemplateWithClassName(ConfigWithClassName(value=1))
+    assert wrapper_with_name() == 1
+
+
 def test_assert_check_nonmissing():
     from compoconf.util import ConfigError, MissingValue, assert_check_nonmissing  # pylint: disable=C0415
 

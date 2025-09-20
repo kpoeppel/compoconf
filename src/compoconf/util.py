@@ -41,9 +41,9 @@ class DynamicConfig(Protocol):
 
     class_name: str
 
-    def __getattr__(self, name: str) -> Any: ...
+    def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol definition
 
-    def __setattr__(self, name: str, value: Any) -> None: ...
+    def __setattr__(self, name: str, value: Any) -> None: ...  # pragma: no cover - protocol definition
 
 
 @runtime_checkable
@@ -52,7 +52,7 @@ class ConfigurableCallable(Protocol[T_co]):
 
     config: DynamicConfig
 
-    def __call__(self, *args: Any, **kwargs: Any) -> T_co: ...
+    def __call__(self, *args: Any, **kwargs: Any) -> T_co: ...  # pragma: no cover - protocol definition
 
 
 # Template classes defined at module level
