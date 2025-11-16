@@ -246,12 +246,10 @@ def _recursive_type_unwrapping(typ) -> list[type]:
 
 
 def _handle_dataclass_cases(config_class: type, data: Any) -> Any:
-    if is_dataclass(data) and isinstance(data, config_class):
-        return data
     if hasattr(config_class, "class_name") and "class_name" in data and config_class.class_name != data["class_name"]:
         raise ValueError(f"Bad data {data['class_name']}/config_class {config_class.class_name} match.")
     if issubclass(config_class, NonStrictDataclass):
-        if "_extras" in data:
+        if "_extras" in data and isinstance(data, dict):
             data = {**data}
             data.update(data["_extras"])
             del data["_extras"]
@@ -277,6 +275,8 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
 
     """
     dataclass_dict = {}
+    if is_dataclass(data) and isinstance(data, config_class):
+        return data
     data = _handle_dataclass_cases(config_class, data)
     for key, key_type in _get_all_annotations(config_class).items():
         if key in data:
