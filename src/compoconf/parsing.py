@@ -11,7 +11,7 @@ from typing import Any, Dict, FrozenSet, List, Literal
 from typing import Sequence as tSequence
 from typing import Set, Tuple, TypeVar, get_args, get_origin, get_type_hints
 
-from compoconf.nonstrict_dataclass import asdict
+from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -102,6 +102,8 @@ def _handle_list(data, args, key_history: str = "") -> list:
     if not isinstance(data, (tuple, list, ListConfig)):
         raise ValueError(f"Expected list, got {type(data)} at key {key_history}")
     if not args or len(args) != 1:
+        # Don't allow untyped list
+        # args = (Any,)
         raise ValueError(f"List type must have exactly 1 type argument at key {key_history}")
     return [
         parse_config(args[0], item, key_history=_extend_key_history(key_history, idx)) for idx, item in enumerate(data)
@@ -124,6 +126,8 @@ def _handle_set(data, args, origin, key_history: str = "") -> Set | FrozenSet:
     if not isinstance(data, (set, frozenset, list, tuple, ListConfig)):
         raise ValueError(f"Expected set, got {type(data)} at key {key_history}")
     if not args or len(args) != 1:
+        # args = (Any,)
+        # Don't allow untyped set
         raise ValueError(f"Set type must have exactly 1 type argument at key {key_history}")
     parsed_items = [
         parse_config(args[0], item, key_history=_extend_key_history(key_history, idx)) for idx, item in enumerate(data)
@@ -146,6 +150,8 @@ def _handle_tuple(data, args, key_history: str = "") -> tuple:
     if not isinstance(data, (tuple, list, ListConfig)):
         raise ValueError(f"Expected tuple or list, got {type(data)} ({data}) at key {key_history}")
     if not args:
+        # args = (Any, ...)
+        # don't allow tuples with Any as type
         raise ValueError("Tuple type must have type arguments")
     if len(args) == 2 and args[1] == Ellipsis:
         args = [args[0] for _ in data]
@@ -170,6 +176,8 @@ def _handle_dict(data, args, key_history: str = "") -> dict[str, Any]:
     """
 
     if not args or len(args) != 2:
+        # args = (str, Any)
+        # Don't allow untyped dicts with str as key type
         raise ValueError(f"Dict type must have exactly 2 type arguments at key {key_history}")
     result = {}
     key_type, value_type = args
@@ -237,6 +245,19 @@ def _recursive_type_unwrapping(typ) -> list[type]:
     )
 
 
+def _handle_dataclass_cases(config_class: type, data: Any) -> Any:
+    if is_dataclass(data) and isinstance(data, config_class):
+        return data
+    if hasattr(config_class, "class_name") and "class_name" in data and config_class.class_name != data["class_name"]:
+        raise ValueError(f"Bad data {data['class_name']}/config_class {config_class.class_name} match.")
+    if issubclass(config_class, NonStrictDataclass):
+        if "_extras" in data:
+            data = {**data}
+            data.update(data["_extras"])
+            del data["_extras"]
+    return data
+
+
 def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_history: str = "") -> Any:
     """
     Handle the dataclass case for config_class in parse_config.
@@ -256,10 +277,7 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
 
     """
     dataclass_dict = {}
-    if is_dataclass(data) and isinstance(data, config_class):
-        return data
-    if hasattr(config_class, "class_name") and "class_name" in data and config_class.class_name != data["class_name"]:
-        raise ValueError(f"Bad data {data['class_name']}/config_class {config_class.class_name} match.")
+    data = _handle_dataclass_cases(config_class, data)
     for key, key_type in _get_all_annotations(config_class).items():
         if key in data:
             if hasattr(data[key], "__contains__") and "class_name" in data[key]:

@@ -816,6 +816,69 @@ def test_parse_nonstrict_nested_typed():
     assert cfg.a == 2
 
 
+def test_nonstrict_dataclass_parsing():
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+    from compoconf.nonstrict_dataclass import asdict  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Inner(NonStrictDataclass):
+        pass
+
+    @dataclass(kw_only=True)
+    class Outer(ConfigInterface):
+        inner: Inner = field(default_factory=Inner)
+
+    cfg = parse_config(Outer, {"inner": {"a": 1}})
+    assert asdict(cfg) == {"class_name": "", "inner": {"a": 1, "_non_strict": True}}
+
+
+def test_standard_asdict_parsing():
+    from dataclasses import asdict  # pylint: disable=C0415
+
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Inner(NonStrictDataclass):
+        pass
+
+    @dataclass(kw_only=True)
+    class Outer(ConfigInterface):
+        inner: Inner = field(default_factory=Inner)
+
+    base_dict = asdict(Outer(inner=Inner(a=1)))
+    base_dict_ref = {"class_name": "", "inner": {"_extras": {"a": 1}, "_non_strict": True}}
+    assert base_dict == base_dict_ref
+
+    cfg = parse_config(Outer, base_dict)
+    # check immutability
+    assert base_dict["inner"]["_extras"]["a"] == 1
+    # check correct dataclass composition
+    assert cfg.inner.a == 1
+    # check if asdict results in same base dict ref again
+    assert asdict(cfg) == base_dict_ref
+
+
+def test_own_asdict_parsing():
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+    from compoconf.nonstrict_dataclass import asdict  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Inner(NonStrictDataclass):
+        pass
+
+    @dataclass(kw_only=True)
+    class Outer(ConfigInterface):
+        inner: Inner = field(default_factory=Inner)
+
+    base_dict_ref = {"class_name": "", "inner": {"a": 1, "_non_strict": True}}
+    cfg = parse_config(Outer, base_dict_ref)
+    assert asdict(cfg) == base_dict_ref
+
+
+if __name__ == "__main__":
+    test_standard_asdict_parsing()
+
+
 # pylint: enable=C0115
 # pylint: enable=C0116
 # pylint: enable=W0212
