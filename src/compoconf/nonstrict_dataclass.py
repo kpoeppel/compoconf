@@ -24,7 +24,7 @@ class NonStrictDataclass:
     2
     """
 
-    _extras: dict = field(default_factory=dict, init=False, repr=False)
+    _extras: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
     _non_strict: bool = True
 
     def __init__(self, *args, **kwargs):
@@ -111,7 +111,7 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
     """
     seen = set()  # recursion guard by id()
 
-    def convert(o, use_to_dict=False):
+    def convert(o, use_to_dict: bool = True):
         oid = id(o)
         if oid in seen:
             # Match stdlib behavior: raise on cycles
@@ -131,6 +131,7 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
                 items = []
                 for f in fields(o):
                     items.append((f.name, convert(getattr(o, f.name))))
+
                 return dict_factory(items)
 
             # 3) Mappings
