@@ -7,6 +7,7 @@ import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import is_dataclass
+from inspect import isclass
 from typing import Any, Dict, FrozenSet, List, Literal
 from typing import Sequence as tSequence
 from typing import Set, Tuple, TypeVar, get_args, get_origin, get_type_hints
@@ -278,6 +279,7 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
     if is_dataclass(data) and isinstance(data, config_class):
         return data
     data = _handle_dataclass_cases(config_class, data)
+    unset_keys = set()
     for key, key_type in _get_all_annotations(config_class).items():
         if key in data:
             if hasattr(data[key], "__contains__") and "class_name" in data[key]:
@@ -299,6 +301,9 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
                 dataclass_dict[key] = parse_config(
                     key_type, data[key], key_history=_extend_key_history(key_history, key)
                 )
+        else:
+            if not hasattr(config_class, key):
+                unset_keys.add(key)
 
     remaining_keys = set(data).difference(set(dataclass_dict))
     remaining_keys.discard("class_name")
@@ -307,10 +312,11 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
     if hasattr(config_class, "_non_strict") and config_class._non_strict:  # pylint: disable=W0212
         dataclass_dict.update({rk: data[rk] for rk in data if rk not in dataclass_dict})
         remaining_keys = set()
+        unset_keys = set()
 
-    if remaining_keys and strict:
+    if (remaining_keys or unset_keys) and strict:
         raise ValueError(
-            f"Undefined keys {remaining_keys} in data at key {key_history} for "
+            f"Undefined keys {remaining_keys} and unset keys {unset_keys} in data {data} at key {key_history} for "
             f"{config_class}: {list(_get_all_annotations(config_class))}"
         )
     return config_class(**dataclass_dict)
@@ -432,7 +438,11 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
     if data is None:
         return None
 
-    if is_dataclass(config_class) and config_class is not Any:
+    if (
+        is_dataclass(config_class)
+        and config_class is not Any
+        or (isclass(config_class) and issubclass(config_class, dict) and config_class is not dict)
+    ):
         return _handle_dataclass(config_class, data, strict=strict, key_history=key_history)
     # Handle both typing.* and built-in collection types
     origin = getattr(config_class, "__origin__", config_class)

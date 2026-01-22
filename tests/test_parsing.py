@@ -3,7 +3,7 @@ Parsing Tests for CompoConf.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, Union
+from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, TypedDict, Union
 
 import pytest  # pylint: disable=E0401
 
@@ -677,6 +677,44 @@ def test_parse_compositional_types_edge_cases():
     assert result == {"key": "value"}
 
 
+def test_unset_key_parsing():
+    @dataclass
+    class TestClass5:
+        a: int
+        b: int = 3
+
+    with pytest.raises(ValueError):
+        parse_config(TestClass5, {"b": 4})
+
+
+def test_typed_dict_parsing():
+    class MyTypedDict(TypedDict):
+        a: int
+
+    assert parse_config(MyTypedDict, {"a": 3}) == {"a": 3}
+
+    with pytest.raises(ValueError):
+        parse_config(MyTypedDict, {})
+
+
+def test_typed_dict_empty_parsing():
+    @dataclass
+    class TestClass6:
+        a: int = 1
+
+    class MyTypedDictEmpty(TypedDict):
+        pass
+
+    assert parse_config(MyTypedDictEmpty, {}) == {}
+    cfg = parse_config(MyTypedDictEmpty | TestClass6, {"a": 2})
+    assert isinstance(cfg, TestClass6)
+    assert cfg.a == 2
+
+    cfg = parse_config(MyTypedDictEmpty | TestClass6, {})
+    assert isinstance(cfg, dict)
+    assert cfg == {}
+
+
 def test_parse_compositional_types_list_tuple():
     """Test _parse_compositional_types with list and tuple types."""
     from compoconf.parsing import _parse_compositional_types  # pylint: disable=C0415
@@ -876,7 +914,7 @@ def test_own_asdict_parsing():
 
 
 if __name__ == "__main__":
-    test_standard_asdict_parsing()
+    test_typed_dict_parsing()
 
 
 # pylint: enable=C0115
