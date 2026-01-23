@@ -2,7 +2,7 @@
 Parsing Tests for CompoConf.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field
 from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, TypedDict, Union
 
 import pytest  # pylint: disable=E0401
@@ -687,6 +687,30 @@ def test_unset_key_parsing():
         parse_config(TestClass5, {"b": 4})
 
 
+def test_unset_key_field_parsing():
+    @dataclass
+    class TestClass7:
+        b: int = field(default=MISSING)
+        a: dict[str, int] = field(default_factory=dict)
+        c: int = field(default=3)
+
+    cfg = parse_config(TestClass7, {"a": {"b": 4}, "b": 4})
+    assert cfg.a == {"b": 4}
+    assert cfg.b == 4
+
+    with pytest.raises(ValueError):
+        parse_config(TestClass7, {"a": {"b": 4}})
+
+    cfg = parse_config(TestClass7, {"b": 4})
+    assert cfg.b == 4
+
+    with pytest.raises(ValueError):
+        parse_config(TestClass7, {})
+
+    with pytest.raises(ValueError):
+        parse_config(TestClass7, {"a": {"b": 4}, "b": 2, "d": 3})
+
+
 def test_typed_dict_parsing():
     class MyTypedDict(TypedDict):
         a: int
@@ -914,7 +938,7 @@ def test_own_asdict_parsing():
 
 
 if __name__ == "__main__":
-    test_typed_dict_parsing()
+    test_unset_key_field_parsing()
 
 
 # pylint: enable=C0115

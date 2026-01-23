@@ -6,7 +6,7 @@ and parse it to a compoconf config structure, or vice versa.
 import logging
 import sys
 from collections.abc import Sequence
-from dataclasses import is_dataclass
+from dataclasses import MISSING, fields, is_dataclass
 from inspect import isclass
 from typing import Any, Dict, FrozenSet, List, Literal
 from typing import Sequence as tSequence
@@ -257,6 +257,24 @@ def _handle_dataclass_cases(config_class: type, data: Any) -> Any:
     return data
 
 
+def _handle_unset_key(config_class: type, key: str) -> bool:
+    if not hasattr(config_class, key):
+        if is_dataclass(config_class):
+            default = MISSING
+            for f in fields(config_class):
+                if f.name == key:
+                    # the f.default case is already part of haattr
+                    if f.default_factory is not MISSING:
+                        default = f.default_factory()
+                    else:
+                        default = MISSING
+            if default is MISSING:
+                return True
+        else:
+            return True
+    return False
+
+
 def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_history: str = "") -> Any:
     """
     Handle the dataclass case for config_class in parse_config.
@@ -301,9 +319,8 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
                 dataclass_dict[key] = parse_config(
                     key_type, data[key], key_history=_extend_key_history(key_history, key)
                 )
-        else:
-            if not hasattr(config_class, key):
-                unset_keys.add(key)
+        elif _handle_unset_key(config_class, key):
+            unset_keys.add(key)
 
     remaining_keys = set(data).difference(set(dataclass_dict))
     remaining_keys.discard("class_name")
