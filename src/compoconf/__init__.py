@@ -27,7 +27,7 @@ from .util import (
     validate_literal_field,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.14"
 
 __all__ = [
     "NonStrictDataclass",
