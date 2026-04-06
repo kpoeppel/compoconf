@@ -8,6 +8,7 @@ using Python's dataclass system.
 
 from .compoconf import (  # pylint: disable=W0406
     ConfigInterface,
+    LazyConfigUnion,
     RegistrableConfigInterface,
     Registry,
     register,
@@ -27,11 +28,12 @@ from .util import (
     validate_literal_field,
 )
 
-__version__ = "0.1.14"
+__version__ = "0.1.15"
 
 __all__ = [
     "NonStrictDataclass",
     "asdict",
+    "LazyConfigUnion",
     "RegistrableConfigInterface",
     "ConfigInterface",
     "Registry",

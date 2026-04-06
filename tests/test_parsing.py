@@ -937,6 +937,196 @@ def test_own_asdict_parsing():
     assert asdict(cfg) == base_dict_ref
 
 
+def test_union_parse_error_shows_details(reset_registry):
+    """Test that Union parse failure shows per-option errors with class_name match first."""
+
+    @dataclass
+    class AlphaConfig(ConfigInterface):
+        alpha_field: int = 1
+
+    @dataclass
+    class BetaConfig(ConfigInterface):
+        beta_field: str = "b"
+
+    # Set class_name manually (normally done by @register)
+    AlphaConfig.class_name = "Alpha"
+    BetaConfig.class_name = "Beta"
+
+    ConfigUnion = Union[AlphaConfig, BetaConfig]
+
+    # Wrong field name for Alpha — error should show AlphaConfig first (class_name match)
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(ConfigUnion, {"class_name": "Alpha", "wrong_field": 99})
+
+    error_msg = str(exc_info.value)
+    # In the "Tried:" section, AlphaConfig should appear before BetaConfig (class_name matched)
+    tried_section = error_msg.split("Tried:")[1]
+    assert tried_section.index("AlphaConfig") < tried_section.index("BetaConfig")
+    # The actual field error is visible
+    assert "wrong_field" in error_msg
+
+
+def test_union_parse_error_no_class_name(reset_registry):
+    """Test Union parse failure when data has no class_name."""
+
+    @dataclass
+    class Config1:
+        value: int
+
+    @dataclass
+    class Config2:
+        text: str
+
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(Union[Config1, Config2], {"invalid": "data"})
+
+    error_msg = str(exc_info.value)
+    assert "Config1" in error_msg
+    assert "Config2" in error_msg
+
+
+def test_union_parse_error_class_name_no_match(reset_registry):
+    """Test error when class_name doesn't match ANY option — no option is prioritized."""
+
+    @dataclass
+    class AlphaConfig(ConfigInterface):
+        alpha_field: int = 1
+
+    @dataclass
+    class BetaConfig(ConfigInterface):
+        beta_field: str = "b"
+
+    AlphaConfig.class_name = "Alpha"
+    BetaConfig.class_name = "Beta"
+
+    ConfigUnion = Union[AlphaConfig, BetaConfig]
+
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(ConfigUnion, {"class_name": "NoSuchClass", "x": 1})
+
+    error_msg = str(exc_info.value)
+    # Both options shown, neither prioritized
+    assert "AlphaConfig" in error_msg
+    assert "BetaConfig" in error_msg
+
+
+def test_union_parse_error_with_pipe_syntax():
+    """Test error messages with Python 3.10+ pipe union syntax."""
+
+    @dataclass
+    class Cfg1:
+        a: int
+
+    @dataclass
+    class Cfg2:
+        b: str
+
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(Cfg1 | Cfg2, {"wrong": True})
+
+    error_msg = str(exc_info.value)
+    assert "Cfg1" in error_msg
+    assert "Cfg2" in error_msg
+
+
+def test_union_parse_error_non_dict_data():
+    """Test error when data is not a dict (no .get('class_name') available)."""
+
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(Union[int, float], "not_a_number")
+
+    error_msg = str(exc_info.value)
+    assert "int" in error_msg
+    assert "float" in error_msg
+
+
+def test_union_parse_error_nested_key_history():
+    """Test that key_history propagates into the Union error."""
+
+    @dataclass
+    class Inner1:
+        x: int
+
+    @dataclass
+    class Inner2:
+        y: str
+
+    @dataclass
+    class Outer:
+        child: Union[Inner1, Inner2]
+
+    with pytest.raises(ValueError, match="child") as exc_info:
+        parse_config(Outer, {"child": {"bad_key": True}})
+
+    error_msg = str(exc_info.value)
+    assert "Tried:" in error_msg
+    assert "Inner1" in error_msg
+    assert "Inner2" in error_msg
+
+
+def test_union_parse_error_with_lazy_config_union(reset_registry):
+    """Test error messages when parsing through a LazyConfigUnion."""
+    from compoconf.compoconf import LazyConfigUnion
+
+    @register_interface
+    class MixerInterface(RegistrableConfigInterface):
+        pass
+
+    @dataclass
+    class ConvConfig(ConfigInterface):
+        kernel: int = 3
+
+    @register
+    class Conv(MixerInterface):
+        config: ConvConfig
+
+    @dataclass
+    class AttnConfig(ConfigInterface):
+        heads: int = 8
+
+    @register
+    class Attn(MixerInterface):
+        config: AttnConfig
+
+    lazy = MixerInterface.cfgtype
+    assert isinstance(lazy, LazyConfigUnion)
+
+    # Parse directly with LazyConfigUnion — wrong field
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(lazy, {"class_name": "Conv", "bad_field": 99})
+
+    error_msg = str(exc_info.value)
+    # In the "Tried:" section, ConvConfig should appear first (class_name match)
+    tried_section = error_msg.split("Tried:")[1]
+    assert tried_section.index("ConvConfig") < tried_section.index("AttnConfig")
+    assert "bad_field" in error_msg
+
+
+def test_union_parse_error_shortest_first():
+    """Test that among non-class_name-matched options, shorter errors come first."""
+
+    @dataclass
+    class SmallConfig:
+        a: int
+
+    @dataclass
+    class BigConfig:
+        field_one: int
+        field_two: str
+        field_three: float
+
+    # Neither has class_name set, so sorting falls back to error length.
+    # SmallConfig has fewer fields → shorter error message about missing 'a'.
+    # BigConfig has more unset fields → longer error message.
+    with pytest.raises(ValueError, match="Tried:") as exc_info:
+        parse_config(Union[BigConfig, SmallConfig], {"wrong": True})
+
+    error_msg = str(exc_info.value)
+    # Check ordering in the "Tried:" section (after the header which lists types in Union order)
+    tried_section = error_msg.split("Tried:")[1]
+    assert tried_section.index("SmallConfig") < tried_section.index("BigConfig")
+
+
 if __name__ == "__main__":
     test_unset_key_field_parsing()
 

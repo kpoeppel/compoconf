@@ -39,7 +39,7 @@ Example:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Type, TypeVar, get_type_hints
+from typing import Any, List, Optional, Type, get_type_hints
 
 from compoconf.nonstrict_dataclass import asdict
 
@@ -58,6 +58,120 @@ class classproperty(property):
         if hasattr(self.fget, "__wrapped__"):
             return self.fget.__wrapped__(owner)
         return None
+
+
+class LazyConfigUnion:
+    """Lazy proxy for the union of all config types registered under an interface.
+
+    Unlike a ``TypeVar`` (which captures constraints at creation time), this proxy
+    defers constraint resolution until the ``__constraints__`` property is actually
+    accessed, ensuring all ``@register`` decorators have had a chance to run.
+
+    This solves the import-order problem where ``.cfgtype`` is evaluated at
+    dataclass definition time before all implementations are registered::
+
+        # interfaces.py — imported first, 0 classes registered yet
+        @dataclass
+        class ContainerConfig:
+            mixer: SeqMixerInterface.cfgtype   # returns LazyConfigUnion
+
+        # standard_attn.py — imported later
+        @register
+        class StandardAttention(SeqMixerInterface): ...
+
+        # At parse time, LazyConfigUnion.__constraints__ correctly resolves all
+        # implementations that have been registered by then.
+
+    Attributes:
+        __constraints__: Property that lazily resolves all registered config classes.
+        registry_class: The interface class this proxy represents.
+        is_config_type: Always ``True``.
+    """
+
+    def __init__(self, interface_cls):
+        self._interface = interface_cls
+
+    @property
+    def __constraints__(self):
+        """Lazily resolve all registered config classes for the interface."""
+        cfg_classes = []
+        if not Registry.has_registry(self._interface):
+            return ()
+        for reg_cls in Registry.registered_classes(self._interface):
+            cfg_cls = _get_config_class(reg_cls)
+            if cfg_cls is not None:
+                cfg_classes.append(cfg_cls)
+        if len(cfg_classes) == 0:
+            LOGGER.warning(f"No option for this type {self._interface} registry")
+        return tuple(cfg_classes)
+
+    @property
+    def registry_class(self):
+        """The interface class this proxy was created for."""
+        return self._interface
+
+    @property
+    def is_config_type(self):
+        """Always True — this represents a config type union."""
+        return True
+
+    def __repr__(self):
+        constraints = self.__constraints__
+        names = ", ".join(c.__name__ for c in constraints) if constraints else "empty"
+        return f"LazyConfigUnion[{self._interface.__name__}]({names})"
+
+    def __or__(self, other):
+        """Support ``SomeInterface.cfgtype | None`` and similar unions."""
+        if other is None:
+            other = type(None)
+        return _LazyOr(self, (other,))
+
+    def __ror__(self, other):
+        """Support ``None | SomeInterface.cfgtype`` (reversed operand)."""
+        if other is None:
+            other = type(None)
+        return _LazyOr(self, (other,))
+
+    def __eq__(self, other):
+        if isinstance(other, LazyConfigUnion):
+            return self._interface is other._interface
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(id(self._interface))
+
+
+class _LazyOr:
+    """Lazy union of a :class:`LazyConfigUnion` with additional types.
+
+    Created by ``LazyConfigUnion.__or__`` to support expressions like
+    ``SomeInterface.cfgtype | None``.  The ``__args__`` property lazily
+    resolves the interface constraints and appends the extra types.
+    """
+
+    def __init__(self, lazy: LazyConfigUnion, others: tuple):
+        self._lazy = lazy
+        self._others = others
+
+    @property
+    def __args__(self):
+        """Lazily resolve constraints and combine with extra types."""
+        return self._lazy.__constraints__ + self._others
+
+    def __or__(self, other):
+        if other is None:
+            other = type(None)
+        return _LazyOr(self._lazy, self._others + (other,))
+
+    def __ror__(self, other):
+        if other is None:
+            other = type(None)
+        return _LazyOr(self._lazy, (other,) + self._others)
+
+    def __repr__(self):
+        args = self.__args__
+        names = " | ".join(c.__name__ if hasattr(c, "__name__") else str(c) for c in args)
+        return f"_LazyOr({names})"
 
 
 def _get_config_class(cls: Type) -> Optional[Type]:
@@ -107,26 +221,20 @@ class RegistrableConfigInterface:
     @classmethod
     def cfgtype(cls) -> Any:
         """
-        Returns the config type of the registry interface class.
-        If more than one class is registered, this results in a union type.
+        Returns a lazy proxy for the config type union of this registry interface.
+
+        Always returns a :class:`LazyConfigUnion` that defers resolution of
+        registered config classes until its ``__constraints__`` property is
+        accessed.  This avoids import-order issues when ``.cfgtype`` is used
+        as a field type annotation at dataclass definition time — at that
+        point, the number of registered implementations may be incomplete.
 
         Returns:
-            Annotation type for config class
+            A :class:`LazyConfigUnion` proxy, or ``None`` if the class has no registry.
         """
-        cfg_classes: List[type] = []
-
         if not Registry.has_registry(cls):
             return None
-        for reg_cls in Registry.registered_classes(cls):
-            cfg_cls = _get_config_class(reg_cls)
-            if cfg_cls is not None:
-                cfg_classes.append(cfg_cls)
-        if len(cfg_classes) == 0:
-            LOGGER.warning(f"No option for this type {cls} registry")
-        T = cfg_classes[0] if len(cfg_classes) == 1 else TypeVar(cls.__name__ + "ConfigType", *cfg_classes)
-        setattr(T, "registry_class", cls)
-        setattr(T, "is_config_type", True)
-        return T
+        return LazyConfigUnion(cls)
 
 
 class _RegistrySingleton:
