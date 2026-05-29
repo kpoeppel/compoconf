@@ -891,7 +891,7 @@ def test_nonstrict_dataclass_parsing():
         inner: Inner = field(default_factory=Inner)
 
     cfg = parse_config(Outer, {"inner": {"a": 1}})
-    assert asdict(cfg) == {"class_name": "", "inner": {"a": 1, "_non_strict": True}}
+    assert asdict(cfg) == {"class_name": "", "inner": {"a": 1}}
 
 
 def test_standard_asdict_parsing():
@@ -932,9 +932,56 @@ def test_own_asdict_parsing():
     class Outer(ConfigInterface):
         inner: Inner = field(default_factory=Inner)
 
-    base_dict_ref = {"class_name": "", "inner": {"a": 1, "_non_strict": True}}
+    base_dict_ref = {"class_name": "", "inner": {"a": 1}}
     cfg = parse_config(Outer, base_dict_ref)
     assert asdict(cfg) == base_dict_ref
+
+
+def test_roundtrips_asdict_matrix():
+    """Round-trip idempotence for both serializers on a nested NonStrictDataclass tree.
+
+    For X in {stdlib dataclasses.asdict, custom compoconf asdict}:
+      - serialize-first: X(parse(X(obj)))      == X(obj)
+      - parse-first:     parse(X(parse(dict))) == parse(dict)   (object equality)
+    """
+    from dataclasses import asdict as stdlib_asdict  # pylint: disable=C0415
+
+    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
+    from compoconf.nonstrict_dataclass import asdict as custom_asdict  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Inner(NonStrictDataclass):
+        kept: int = 9
+        tup: tuple[int, str] = (1, "a")
+
+    @dataclass(init=False)
+    class Mid(NonStrictDataclass):
+        sub: Inner = field(default_factory=Inner)
+        n: int = 0
+
+    @dataclass(kw_only=True)
+    class Outer(ConfigInterface):
+        mid: Mid = field(default_factory=Mid)
+
+    # nested NonStrict-in-NonStrict-in-strict, extras of mixed types at both levels
+    obj = Outer(
+        mid=Mid(
+            n=2,
+            sub=Inner(kept=1, tup=(5, "z"), e_int=3, e_str="s", e_list=[1, 2], e_dict={"k": 3}, e_tup=(2, 3)),
+            e_top=[9, 8],
+        )
+    )
+
+    for name, serialize in (("custom_asdict", custom_asdict), ("stdlib_asdict", stdlib_asdict)):
+        dumped = serialize(obj)
+
+        # serialize -> parse -> serialize  is stable
+        assert serialize(parse_config(Outer, dumped)) == dumped, f"{name}: serialize round-trip not idempotent"
+
+        # parse -> serialize -> parse  is stable (object equality)
+        obj_a = parse_config(Outer, dumped)
+        obj_b = parse_config(Outer, serialize(obj_a))
+        assert obj_a == obj_b, f"{name}: parse round-trip not idempotent"
 
 
 def test_union_parse_error_shows_details(reset_registry):

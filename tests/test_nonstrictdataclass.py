@@ -80,7 +80,6 @@ def test_non_strict_dataclass_instantiation_missing():
         "d1": "d1",
         "d2": "abc",
         "e": "bcd",
-        "_non_strict": True,
     }
 
     with pytest.raises(TypeError):
@@ -118,7 +117,7 @@ def test_asdict_types():
         a: list[int] = field(default_factory=lambda: [1, 2, 3])
         b: tuple[int, str] = (1, "1")
 
-    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"_non_strict": True, "a": [1, 2, 3], "b": (1, "1"), "c": (2, 3)}
+    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"a": [1, 2, 3], "b": (1, "1"), "c": (2, 3)}
 
 
 def test_post_init():
@@ -152,12 +151,12 @@ def test_non_strict_dataclass_to_dict():
 
     # Test to_dict without extras_key
     dict_representation = asdict(instance)
-    assert dict_representation == {"a": 1, "b": "default_b", "c": "extra_c", "d": 3.14, "_non_strict": True}
+    assert dict_representation == {"a": 1, "b": "default_b", "c": "extra_c", "d": 3.14}
 
     # Test asdict with patched asdict
     # Assuming the patch makes asdict behave like to_dict for NonStrictDataclass
     asdict_representation = asdict(instance)
-    assert asdict_representation == {"a": 1, "b": "default_b", "c": "extra_c", "d": 3.14, "_non_strict": True}
+    assert asdict_representation == {"a": 1, "b": "default_b", "c": "extra_c", "d": 3.14}
 
     # Test to_dict with extras_key
     dict_representation_with_key = instance._to_dict(extras_key="extra_data")  # pylint: disable=W0212
@@ -165,13 +164,12 @@ def test_non_strict_dataclass_to_dict():
         "a": 1,
         "b": "default_b",
         "extra_data": {"c": "extra_c", "d": 3.14},
-        "_non_strict": True,
     }
 
     # Test to_dict with an instance that has no extra fields
     instance_no_extras = MyNonStrictDataclass2(a=2)
     dict_no_extras = asdict(instance_no_extras)
-    assert dict_no_extras == {"a": 2, "b": "default_b", "_non_strict": True}
+    assert dict_no_extras == {"a": 2, "b": "default_b"}
 
     dict_no_extras_with_key = asdict(instance_no_extras)
-    assert dict_no_extras_with_key == {"a": 2, "b": "default_b", "_non_strict": True}
+    assert dict_no_extras_with_key == {"a": 2, "b": "default_b"}

@@ -69,6 +69,7 @@ class NonStrictDataclass:
         """
         d = asdict_patched(self, use_to_dict=False)
         del d["_extras"]
+        del d["_non_strict"]
         if extras_key is None:
             d.update(self._extras)
         else:
