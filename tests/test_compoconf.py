@@ -636,7 +636,7 @@ def test_lazy_config_union_eq_hash(reset_registry):
     # Different interface -> not equal
     assert lazy1a != lazy2
     # Not equal to non-LazyConfigUnion
-    assert lazy1a != "not a lazy union"
+    assert lazy1a != "not a lazy union"  # pylint: disable=W0143
     # Hashable (can be used in sets/dicts)
     assert hash(lazy1a) == hash(lazy1b)
     assert {lazy1a, lazy1b} == {lazy1a}
@@ -771,7 +771,6 @@ def test_lazy_config_union_or_none(reset_registry):
 
 def test_lazy_config_union_or_type(reset_registry):
     """Test SomeInterface.cfgtype | SomeOtherType."""
-    from compoconf.compoconf import _LazyOr
     from compoconf.parsing import parse_config
 
     @register_interface

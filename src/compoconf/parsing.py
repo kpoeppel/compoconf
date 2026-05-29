@@ -469,13 +469,14 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
     if origin in (list, List, dict, Dict, tuple, Tuple, Sequence, set, Set, frozenset, FrozenSet):
         return _parse_compositional_types(origin, args, data, key_history=key_history)
 
+    is_union_base = (hasattr(config_class, "__name__") and config_class.__name__ == "Union") or (
+        hasattr(config_class, "__or__") and (get_origin(config_class) in {Union, UnionType})
+    )
+
+    is_union_type_lazy = isinstance(config_class, (TypeVar, LazyConfigUnion, _LazyOr))
+
     # Handle Union types (both typing.Union and | syntax) and lazy config unions
-    if (
-        (hasattr(config_class, "__name__") and config_class.__name__ == "Union")
-        or (hasattr(config_class, "__or__") and (get_origin(config_class) in {Union, UnionType}))
-        or isinstance(config_class, TypeVar)
-        or isinstance(config_class, (LazyConfigUnion, _LazyOr))
-    ):
+    if is_union_base or is_union_type_lazy:
         union_types = (
             getattr(config_class, "__args__", None)
             or getattr(config_class, "__union_params__", None)
@@ -493,16 +494,17 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
         # Sort: class_name match first (the option the user most likely intended),
         # then by shortest error message (proxy for "closest match").
         data_class_name = data.get("class_name") if isinstance(data, dict) else None
-        errors.sort(key=lambda opt_err: (
-            not (hasattr(opt_err[0], "class_name") and opt_err[0].class_name == data_class_name),
-            len(str(opt_err[1])),
-        ))
+        errors.sort(
+            key=lambda opt_err: (
+                not (hasattr(opt_err[0], "class_name") and opt_err[0].class_name == data_class_name),
+                len(str(opt_err[1])),
+            )
+        )
         error_details = "\n  ".join(
             f"{opt.__name__ if hasattr(opt, '__name__') else opt}: {err}" for opt, err in errors
         )
         raise ValueError(
-            f"Could not parse into any of {union_types} at key: {key_history}\n"
-            f"Tried:\n  {error_details}"
+            f"Could not parse into any of {union_types} at key: {key_history}\n" f"Tried:\n  {error_details}"
         )
 
     # handle bool

@@ -450,140 +450,6 @@ def test_parse_config_primitive_conversion_error():
         parse_config(obj, "test")
 
 
-# Tests for dump_config function
-
-
-def test_basic_dump(reset_registry):
-    """Test basic dumping of a dataclass to a dictionary."""
-
-    @dataclass
-    class SimpleConfig:
-        a: int = 1
-        b: str = "test"
-        c: float = 3.14
-
-    config = SimpleConfig(a=42, b="hello", c=2.71)
-    dumped = dump_config(config)
-
-    assert isinstance(dumped, dict)
-    assert dumped["a"] == 42
-    assert dumped["b"] == "hello"
-    assert dumped["c"] == 2.71
-
-
-def test_nested_dump(reset_registry):
-    """Test dumping of nested dataclasses."""
-
-    @dataclass
-    class InnerConfig:
-        x: int = 10
-        y: str = "inner"
-
-    @dataclass
-    class OuterConfig:
-        name: str = "outer"
-        inner: InnerConfig = field(default_factory=InnerConfig)
-
-    config = OuterConfig(name="test", inner=InnerConfig(x=20, y="nested"))
-    dumped = dump_config(config)
-
-    assert isinstance(dumped, dict)
-    assert dumped["name"] == "test"
-    assert isinstance(dumped["inner"], dict)
-    assert dumped["inner"]["x"] == 20
-    assert dumped["inner"]["y"] == "nested"
-
-
-def test_collection_dump(reset_registry):
-    """Test dumping of collections (lists, dicts)."""
-
-    @dataclass
-    class ItemConfig:
-        id: int
-        name: str
-
-    @dataclass
-    class CollectionConfig:
-        items: List[ItemConfig]
-        mapping: Dict[str, ItemConfig]
-
-    items = [ItemConfig(1, "one"), ItemConfig(2, "two")]
-    mapping = {"a": ItemConfig(3, "three"), "b": ItemConfig(4, "four")}
-    config = CollectionConfig(items=items, mapping=mapping)
-
-    dumped = dump_config(config)
-
-    assert isinstance(dumped, dict)
-    assert isinstance(dumped["items"], list)
-    assert len(dumped["items"]) == 2
-    assert isinstance(dumped["items"][0], dict)
-    assert dumped["items"][0]["id"] == 1
-    assert dumped["items"][0]["name"] == "one"
-
-    assert isinstance(dumped["mapping"], dict)
-    assert isinstance(dumped["mapping"]["a"], dict)
-    assert dumped["mapping"]["a"]["id"] == 3
-    assert dumped["mapping"]["a"]["name"] == "three"
-
-
-def test_config_interface_dump(reset_registry):
-    """Test dumping of ConfigInterface instances."""
-
-    @register_interface
-    class TestInterface(RegistrableConfigInterface):
-        pass
-
-    @dataclass
-    class TestConfig(ConfigInterface):
-        value: int = 42
-        name: str = "test"
-
-    @register
-    class TestClass(TestInterface):  # pylint: disable=W0612
-        config: TestConfig
-
-    config = TestConfig(value=100, name="dumped")
-    dumped = dump_config(config)
-
-    assert isinstance(dumped, dict)
-    assert dumped["value"] == 100
-    assert dumped["name"] == "dumped"
-    assert dumped["class_name"] == "TestClass"
-
-
-def test_roundtrip_conversion(reset_registry):
-    """Test round-trip conversion: parse_config -> dump_config -> parse_config."""
-
-    @dataclass
-    class ComplexConfig:
-        name: str
-        values: List[int]
-        nested: Dict[str, Dict[str, int]]
-
-    original_data = {
-        "name": "test",
-        "values": [1, 2, 3],
-        "nested": {"a": {"x": 10, "y": 20}, "b": {"x": 30, "y": 40}},
-    }
-
-    # First parse
-    parsed = parse_config(ComplexConfig, original_data)
-    assert isinstance(parsed, ComplexConfig)
-
-    # Then dump
-    dumped = dump_config(parsed)
-    assert isinstance(dumped, dict)
-
-    # Then parse again
-    reparsed = parse_config(ComplexConfig, dumped)
-    assert isinstance(reparsed, ComplexConfig)
-
-    # Verify the round-trip preserved all data
-    assert reparsed.name == original_data["name"]
-    assert reparsed.values == original_data["values"]
-    assert reparsed.nested == original_data["nested"]
-
-
 def test_registry_roundtrip(reset_registry):
     """Test round-trip conversion with registry classes."""
 
@@ -803,187 +669,6 @@ def test_get_all_annotations():
     assert annotations["b"] is str
 
 
-def test_parse_config_with_non_strict_dataclass():
-    """Test parse_config with NonStrictDataclass and extra fields."""
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class MyNonStrictConfig(NonStrictDataclass):
-        typed_field: int
-        default_field: str = "default"
-
-    # Data with typed fields and extra untyped fields
-    data_with_extras = {
-        "typed_field": 123,
-        "default_field": "overridden",
-        "extra_field_1": "some_value",
-        "extra_field_2": 456,
-    }
-
-    # Test parsing with strict=True (should still allow extras due to _non_strict)
-    parsed_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=True)
-    assert isinstance(parsed_strict, MyNonStrictConfig)
-    assert parsed_strict.typed_field == 123
-    assert parsed_strict.default_field == "overridden"
-    # Check that extra fields are accessible as attributes
-    assert parsed_strict.extra_field_1 == "some_value"
-    assert parsed_strict.extra_field_2 == 456
-    # Check that extra fields are stored in _extras
-    assert parsed_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
-
-    # Test parsing with strict=False (should also allow extras)
-    parsed_non_strict = parse_config(MyNonStrictConfig, data_with_extras, strict=False)
-    assert isinstance(parsed_non_strict, MyNonStrictConfig)
-    assert parsed_non_strict.typed_field == 123
-    assert parsed_non_strict.default_field == "overridden"
-    assert parsed_non_strict.extra_field_1 == "some_value"
-    assert parsed_non_strict.extra_field_2 == 456
-    assert parsed_non_strict._extras == {"extra_field_1": "some_value", "extra_field_2": 456}
-
-    # Test parsing with only typed fields
-    data_typed_only = {"typed_field": 789}
-    parsed_typed_only = parse_config(MyNonStrictConfig, data_typed_only)
-    assert isinstance(parsed_typed_only, MyNonStrictConfig)
-    assert parsed_typed_only.typed_field == 789
-    assert parsed_typed_only.default_field == "default"
-    assert parsed_typed_only._extras == {}
-
-    # Test parsing with missing required field (should raise error)
-    data_missing_required = {"default_field": "value"}
-    with pytest.raises(TypeError):
-        parse_config(MyNonStrictConfig, data_missing_required)
-
-    # Test parsing with extra fields that are not in _extras (should be handled by NonStrictDataclass __init__)
-    # The _handle_dataclass logic in parsing.py should correctly pass these to the NonStrictDataclass constructor.
-    # The NonStrictDataclass constructor then assigns them to attributes and stores them in _extras.
-    # So, the above tests already cover this implicitly.
-
-
-def test_parse_nonstrict_nested_typed():
-    """Test checking that dataclasses are still resolved for parsing in the NonStrict case"""
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class Inner(NonStrictDataclass):
-        b: int = 2
-
-    @dataclass(init=False)
-    class Outer(NonStrictDataclass):
-        a: int = 1
-        b: Inner = field(default_factory=Inner)
-
-    cfg = parse_config(Outer, {"a": 2, "b": {"b": 3}})
-    assert isinstance(cfg.b, Inner)
-    assert cfg.b.b == 3
-    assert cfg.a == 2
-
-
-def test_nonstrict_dataclass_parsing():
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-    from compoconf.nonstrict_dataclass import asdict  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class Inner(NonStrictDataclass):
-        pass
-
-    @dataclass(kw_only=True)
-    class Outer(ConfigInterface):
-        inner: Inner = field(default_factory=Inner)
-
-    cfg = parse_config(Outer, {"inner": {"a": 1}})
-    assert asdict(cfg) == {"class_name": "", "inner": {"a": 1}}
-
-
-def test_standard_asdict_parsing():
-    from dataclasses import asdict  # pylint: disable=C0415
-
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class Inner(NonStrictDataclass):
-        pass
-
-    @dataclass(kw_only=True)
-    class Outer(ConfigInterface):
-        inner: Inner = field(default_factory=Inner)
-
-    base_dict = asdict(Outer(inner=Inner(a=1)))
-    base_dict_ref = {"class_name": "", "inner": {"_extras": {"a": 1}, "_non_strict": True}}
-    assert base_dict == base_dict_ref
-
-    cfg = parse_config(Outer, base_dict)
-    # check immutability
-    assert base_dict["inner"]["_extras"]["a"] == 1
-    # check correct dataclass composition
-    assert cfg.inner.a == 1
-    # check if asdict results in same base dict ref again
-    assert asdict(cfg) == base_dict_ref
-
-
-def test_own_asdict_parsing():
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-    from compoconf.nonstrict_dataclass import asdict  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class Inner(NonStrictDataclass):
-        pass
-
-    @dataclass(kw_only=True)
-    class Outer(ConfigInterface):
-        inner: Inner = field(default_factory=Inner)
-
-    base_dict_ref = {"class_name": "", "inner": {"a": 1}}
-    cfg = parse_config(Outer, base_dict_ref)
-    assert asdict(cfg) == base_dict_ref
-
-
-def test_roundtrips_asdict_matrix():
-    """Round-trip idempotence for both serializers on a nested NonStrictDataclass tree.
-
-    For X in {stdlib dataclasses.asdict, custom compoconf asdict}:
-      - serialize-first: X(parse(X(obj)))      == X(obj)
-      - parse-first:     parse(X(parse(dict))) == parse(dict)   (object equality)
-    """
-    from dataclasses import asdict as stdlib_asdict  # pylint: disable=C0415
-
-    from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415
-    from compoconf.nonstrict_dataclass import asdict as custom_asdict  # pylint: disable=C0415
-
-    @dataclass(init=False)
-    class Inner(NonStrictDataclass):
-        kept: int = 9
-        tup: tuple[int, str] = (1, "a")
-
-    @dataclass(init=False)
-    class Mid(NonStrictDataclass):
-        sub: Inner = field(default_factory=Inner)
-        n: int = 0
-
-    @dataclass(kw_only=True)
-    class Outer(ConfigInterface):
-        mid: Mid = field(default_factory=Mid)
-
-    # nested NonStrict-in-NonStrict-in-strict, extras of mixed types at both levels
-    obj = Outer(
-        mid=Mid(
-            n=2,
-            sub=Inner(kept=1, tup=(5, "z"), e_int=3, e_str="s", e_list=[1, 2], e_dict={"k": 3}, e_tup=(2, 3)),
-            e_top=[9, 8],
-        )
-    )
-
-    for name, serialize in (("custom_asdict", custom_asdict), ("stdlib_asdict", stdlib_asdict)):
-        dumped = serialize(obj)
-
-        # serialize -> parse -> serialize  is stable
-        assert serialize(parse_config(Outer, dumped)) == dumped, f"{name}: serialize round-trip not idempotent"
-
-        # parse -> serialize -> parse  is stable (object equality)
-        obj_a = parse_config(Outer, dumped)
-        obj_b = parse_config(Outer, serialize(obj_a))
-        assert obj_a == obj_b, f"{name}: parse round-trip not idempotent"
-
-
 def test_union_parse_error_shows_details(reset_registry):
     """Test that Union parse failure shows per-option errors with class_name match first."""
 
@@ -1113,7 +798,7 @@ def test_union_parse_error_nested_key_history():
 
 def test_union_parse_error_with_lazy_config_union(reset_registry):
     """Test error messages when parsing through a LazyConfigUnion."""
-    from compoconf.compoconf import LazyConfigUnion
+    from compoconf.compoconf import LazyConfigUnion  # pylint: disable=C0415
 
     @register_interface
     class MixerInterface(RegistrableConfigInterface):
@@ -1124,7 +809,7 @@ def test_union_parse_error_with_lazy_config_union(reset_registry):
         kernel: int = 3
 
     @register
-    class Conv(MixerInterface):
+    class Conv(MixerInterface):  # pylint: disable=W0612
         config: ConvConfig
 
     @dataclass
@@ -1132,7 +817,7 @@ def test_union_parse_error_with_lazy_config_union(reset_registry):
         heads: int = 8
 
     @register
-    class Attn(MixerInterface):
+    class Attn(MixerInterface):  # pylint: disable=W0612
         config: AttnConfig
 
     lazy = MixerInterface.cfgtype

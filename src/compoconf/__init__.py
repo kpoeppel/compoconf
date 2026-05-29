@@ -14,9 +14,9 @@ from .compoconf import (  # pylint: disable=W0406
     register,
     register_interface,
 )
-from .nonstrict_dataclass import NonStrictDataclass, asdict
-from .parsing import dump_config, parse_config
-from .util import (
+from .nonstrict_dataclass import NonStrictDataclass, asdict  # pylint: disable=W0406
+from .parsing import dump_config, parse_config  # pylint: disable=W0406
+from .util import (  # pylint: disable=W0406
     ConfigError,
     LiteralError,
     MissingValue,
@@ -28,7 +28,7 @@ from .util import (
     validate_literal_field,
 )
 
-__version__ = "0.1.15"
+__version__ = "0.1.16"
 
 __all__ = [
     "NonStrictDataclass",

@@ -39,7 +39,7 @@ Example:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Type, get_type_hints
+from typing import Any, Optional, Type, get_type_hints
 
 from compoconf.nonstrict_dataclass import asdict
 

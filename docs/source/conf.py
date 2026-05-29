@@ -2,7 +2,6 @@
 Sphinx Documentation for CompoConf
 """
 
-
 # Configuration file for the Sphinx documentation builder.
 
 import os
