@@ -2,33 +2,15 @@
 Parsing Tests for CompoConf.
 """
 
-from dataclasses import MISSING, dataclass, field
-from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, TypedDict, Union
+from dataclasses import dataclass, field
 
 import pytest  # pylint: disable=E0401
 
-try:
-    from omegaconf import OmegaConf
-
-    is_omegaconf_available = True
-except ImportError:
-    is_omegaconf_available = False
-
-from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, Registry, register, register_interface
-from compoconf.parsing import dump_config, parse_config
+from compoconf.compoconf import ConfigInterface
+from compoconf.parsing import parse_config
 
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
-@pytest.fixture
-def reset_registry():
-    """Reset the registry before each test."""
-    for reg in list(Registry._registries):
-        Registry._registries.pop(reg)
-    for reg in list(Registry._registry_classes):
-        Registry._registry_classes.pop(reg)
-    yield
-
-
 def test_parse_config_with_non_strict_dataclass():
     """Test parse_config with NonStrictDataclass and extra fields."""
     from compoconf.nonstrict_dataclass import NonStrictDataclass  # pylint: disable=C0415

@@ -2,32 +2,13 @@
 Parsing Tests for CompoConf.
 """
 
-from dataclasses import MISSING, dataclass, field
-from typing import Dict, FrozenSet, List, Literal, Optional, Set, Tuple, TypedDict, Union
+from dataclasses import dataclass, field
+from typing import Dict, List
 
-import pytest  # pylint: disable=E0401
-
-try:
-    from omegaconf import OmegaConf
-
-    is_omegaconf_available = True
-except ImportError:
-    is_omegaconf_available = False
-
-from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, Registry, register, register_interface
+from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, register, register_interface
 from compoconf.parsing import dump_config, parse_config
 
-
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
-@pytest.fixture
-def reset_registry():
-    """Reset the registry before each test."""
-    for reg in list(Registry._registries):
-        Registry._registries.pop(reg)
-    for reg in list(Registry._registry_classes):
-        Registry._registry_classes.pop(reg)
-    yield
-
 
 # Tests for dump_config function
 
@@ -162,8 +143,68 @@ def test_roundtrip_conversion(reset_registry):
     assert reparsed.values == original_data["values"]
     assert reparsed.nested == original_data["nested"]
 
-if __name__ == "__main__":
-    test_unset_key_field_parsing()
+
+def test_registry_roundtrip(reset_registry):
+    """Test round-trip conversion with registry classes."""
+
+    @register_interface
+    class TestInterface(RegistrableConfigInterface):
+        pass
+
+    @dataclass
+    class TestConfig(ConfigInterface):
+        value: int = 42
+
+    @register
+    class TestClass(TestInterface):
+        config: TestConfig
+
+    @dataclass
+    class ContainerConfig:
+        interface: TestInterface.cfgtype
+
+    # Create original config
+    original_data = {"interface": {"class_name": "TestClass", "value": 100}}
+
+    # Parse
+    parsed = parse_config(ContainerConfig, original_data)
+    assert isinstance(parsed.interface, TestConfig)
+    assert parsed.interface.value == 100
+
+    # Dump
+    dumped = dump_config(parsed)
+    assert isinstance(dumped, dict)
+    assert isinstance(dumped["interface"], dict)
+    assert dumped["interface"]["class_name"] == "TestClass"
+    assert dumped["interface"]["value"] == 100
+
+    # Parse again
+    reparsed = parse_config(ContainerConfig, dumped)
+    assert isinstance(reparsed.interface, TestConfig)
+    assert reparsed.interface.value == 100
+
+    # Instantiate from reparsed
+    instance = reparsed.interface.instantiate(TestInterface)
+    assert isinstance(instance, TestClass)
+
+
+def test_primitive_types():
+    """Test dumping of primitive types."""
+    # Primitive types should be returned as-is
+    assert dump_config(42) == 42
+    assert dump_config("hello") == "hello"
+    assert dump_config(3.14) == 3.14
+    assert dump_config(True) is True
+
+    # Lists of primitives
+    assert dump_config([1, 2, 3]) == [1, 2, 3]
+
+    # Dictionaries of primitives
+    assert dump_config({"a": 1, "b": "test"}) == {"a": 1, "b": "test"}
+
+    # Nested structures
+    nested = {"a": [1, 2, {"b": "test"}]}
+    assert dump_config(nested) == nested
 
 
 # pylint: enable=C0115
