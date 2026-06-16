@@ -6,13 +6,112 @@ from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from typing import Any
 
+# internal bookkeeping fields, managed explicitly in ``_nonstrict_init`` and kept out of
+# the positional/keyword arg matching so they never shadow user-declared fields.
+_INTERNAL_FIELDS = ("_extras", "_non_strict")
 
-@dataclass
-class NonStrictDataclass:
+
+def _nonstrict_init(self, args, kwargs):
+    """Shared ``__init__`` body for the (frozen) non-strict dataclasses.
+
+    Uses ``object.__setattr__`` for every assignment so the exact same logic works for
+    both mutable and ``frozen=True`` subclasses (a frozen ``__setattr__`` would reject
+    plain ``setattr``, exactly as the stdlib-generated frozen ``__init__`` does).
+
+    Args:
+        self: The instance being initialized.
+        args: Positional arguments mapped onto the declared (user) fields, in order.
+        kwargs: Keyword arguments; declared field names are consumed, everything else
+            becomes an "extra" attribute.  A ``_extras`` kwarg (fed back by
+            ``dataclasses.replace`` / stdlib-``asdict``-shaped dicts) seeds the extras.
+    """
+    set_ = object.__setattr__
+
+    # ``replace`` (and stdlib-``asdict``-shaped dicts) feed ``_extras`` back in as a
+    # kwarg; pop it out as the base set of extras and drop the ``_non_strict`` flag.
+    base_extras = dict(kwargs.pop("_extras", {}) or {})
+    kwargs.pop("_non_strict", None)
+
+    # look at *runtime* class so this also sees subclass fields
+    declared = [f for f in fields(type(self)) if f.init and f.name not in _INTERNAL_FIELDS]
+    declared_names = {f.name for f in declared}
+
+    # split kwargs into declared vs extras
+    init_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in declared_names}
+    extra_kwargs = kwargs
+
+    # assign declared fields (replicates dataclass auto-init)
+    for f, val in zip(declared, args):
+        set_(self, f.name, val)
+    for f in declared[len(args) :]:
+        if f.name in init_kwargs:
+            set_(self, f.name, init_kwargs[f.name])
+        elif f.default is not MISSING:
+            set_(self, f.name, f.default)
+        elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
+            set_(self, f.name, f.default_factory())  # type: ignore[attr-defined]
+        else:
+            raise TypeError(f"Missing required argument: {f.name}")
+
+    # stash and attach extras: replace()-supplied ``_extras`` first, then any loose
+    # keyword arguments (so an explicitly passed extra overrides the round-tripped one)
+    extras = {**base_extras, **extra_kwargs}
+    set_(self, "_extras", extras)
+    for k, v in extras.items():
+        set_(self, k, v)
+    set_(self, "_non_strict", True)
+    self.__post_init__()
+
+
+class _NonStrictDataclassBase:
+    """Shared, non-dataclass behavior for :class:`NonStrictDataclass` and its frozen twin.
+
+    Holds the common ``__init__``/``__post_init__``/``_to_dict`` implementation so that the
+    mutable and frozen variants differ only in their ``@dataclass`` decorator.  Subclasses
+    use ``@dataclass(init=False)`` (or ``@dataclass(init=False, frozen=True)``) so this
+    shared ``__init__`` is inherited rather than regenerated.
+    """
+
+    # Declared as dataclass fields on the concrete subclasses below; annotated here so static
+    # analysis knows the shared methods may rely on them (this class is not itself a dataclass,
+    # so these annotations are not collected as fields).
+    _extras: dict[str, Any]
+    _non_strict: bool
+
+    def __init__(self, *args, **kwargs):
+        _nonstrict_init(self, args, kwargs)
+
+    def __post_init__(self):
+        """
+        Post init functionality like for dataclasses.
+        """
+
+    def _to_dict(self, *, extras_key=None):
+        """
+        Convert the (frozen) NonStrictDataclass to a dictionary including the extra attributes.
+        """
+        # NOTE: extras are *untyped* by contract (see README): use a declared
+        # ``Type | None = None`` field for nested configs that must round-trip.  Dataclass-valued
+        # extras are therefore not supported and are intentionally not recursed into here.
+        d = asdict_patched(self, use_to_dict=False)
+        del d["_extras"]
+        del d["_non_strict"]
+        if extras_key is None:
+            d.update(self._extras)
+        else:
+            d[extras_key] = dict(self._extras)
+        return d
+
+
+@dataclass(init=False)
+class NonStrictDataclass(_NonStrictDataclassBase):
     """
     Dataclass Interface that allows for non-strict behavior, so it can be extended with extra
     keyword arguments on initialization.
     Note that for an inheriting class, one must use @dataclass(init=False) as decorator.
+
+    For an immutable variant, inherit from :class:`FrozenNonStrictDataclass` instead and use
+    ``@dataclass(init=False, frozen=True)``.
 
     Example:
 
@@ -24,57 +123,42 @@ class NonStrictDataclass:
     2
     """
 
-    _extras: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+    # ``_extras`` participates in init (``init=True``) so that ``dataclasses.replace``
+    # round-trips the extra values: ``replace`` only collects ``init=True`` fields, so
+    # an ``init=False`` ``_extras`` would be silently dropped on every replace.  The
+    # custom ``__init__`` still owns ``_extras`` entirely (it is excluded from the
+    # positional/keyword arg matching and reconstructed from the leftover kwargs).
+    # ``hash=False`` keeps the frozen variant hashable (a dict is unhashable); it is a
+    # harmless no-op here since a mutable dataclass is unhashable anyway.
+    _extras: dict[str, Any] = field(default_factory=dict, repr=False, hash=False)
     _non_strict: bool = True
 
-    def __init__(self, *args, **kwargs):
-        # look at *runtime* class so this also sees subclass fields
-        declared = [f for f in fields(type(self)) if f.init]
-        idx = [idx for idx, f in enumerate(declared) if f.name == "_non_strict"][0]
-        declared = declared[:idx] + declared[(idx + 1) :] + [declared[idx]]
-        declared_names = {f.name for f in declared}
 
-        # split kwargs into declared vs extras
-        init_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in declared_names}
-        extra_kwargs = kwargs
+@dataclass(init=False, frozen=True)
+class FrozenNonStrictDataclass(_NonStrictDataclassBase):
+    """
+    Immutable counterpart of :class:`NonStrictDataclass`.
 
-        # assign declared fields (replicates dataclass auto-init)
-        for f, val in zip(declared, args):
-            setattr(self, f.name, val)
-        for f in declared[len(args) :]:
-            if f.name in init_kwargs:
-                setattr(self, f.name, init_kwargs[f.name])
-            elif f.default is not MISSING:
-                setattr(self, f.name, f.default)
-            elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
-                setattr(self, f.name, f.default_factory())  # type: ignore[attr-defined]
-            else:
-                raise TypeError(f"Missing required argument: {f.name}")
+    Behaves exactly like :class:`NonStrictDataclass` (extra keyword arguments on init,
+    ``dataclasses.replace`` round-tripping, flattened ``asdict``), but instances are frozen:
+    declared fields *and* extras are read-only after construction, and instances are hashable.
 
-        # stash and attach extras
-        self._extras = extra_kwargs
-        for k, v in extra_kwargs.items():
-            setattr(self, k, v)
-        self._non_strict = True
-        self.__post_init__()
+    A frozen dataclass can only inherit from a frozen dataclass base, which is why this is a
+    separate class rather than a flag on :class:`NonStrictDataclass`.  Inheriting classes must
+    use ``@dataclass(init=False, frozen=True)`` as decorator.
 
-    def __post_init__(self):
-        """
-        Post init functionality like for dataclasses.
-        """
+    Example:
 
-    def _to_dict(self, *, extras_key=None):
-        """
-        Convert the NonStrictDataclass to a dictionary including the extra attributes.
-        """
-        d = asdict_patched(self, use_to_dict=False)
-        del d["_extras"]
-        del d["_non_strict"]
-        if extras_key is None:
-            d.update(self._extras)
-        else:
-            d[extras_key] = dict(self._extras)
-        return d
+    >>> @dataclass(init=False, frozen=True)
+    ... class MyFrozen(FrozenNonStrictDataclass):
+    ...     a: int
+    >>> obj = MyFrozen(a=1, b=2)
+    >>> obj.b
+    2
+    """
+
+    _extras: dict[str, Any] = field(default_factory=dict, repr=False, hash=False)
+    _non_strict: bool = True
 
 
 def _has_to_dict(o: Any) -> bool:

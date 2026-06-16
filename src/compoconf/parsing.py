@@ -13,7 +13,7 @@ from typing import Sequence as tSequence
 from typing import Set, Tuple, TypeVar, get_args, get_origin, get_type_hints
 
 from compoconf.compoconf import LazyConfigUnion, _LazyOr
-from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
+from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -250,7 +250,7 @@ def _recursive_type_unwrapping(typ) -> list[type]:
 def _handle_dataclass_cases(config_class: type, data: Any) -> Any:
     if hasattr(config_class, "class_name") and "class_name" in data and config_class.class_name != data["class_name"]:
         raise ValueError(f"Bad data {data['class_name']}/config_class {config_class.class_name} match.")
-    if issubclass(config_class, NonStrictDataclass):
+    if issubclass(config_class, _NonStrictDataclassBase):
         if "_extras" in data and isinstance(data, dict):
             data = {**data}
             data.update(data["_extras"])

@@ -139,6 +139,8 @@ config = {
 - `RegistrableConfigInterface`: Base class for interfaces that can be configured
 - `ConfigInterface`: Base class for configuration dataclasses
 - `Registry`: Singleton managing registration of interfaces and implementations
+- `NonStrictDataclass`: Base class for dataclasses that accept extra (undeclared) keyword arguments
+- `FrozenNonStrictDataclass`: Immutable (hashable) counterpart of `NonStrictDataclass`
 
 ### Decorators
 
@@ -148,6 +150,8 @@ config = {
 ### Functions
 
 - `parse_config(config_class, data, strict=True)`: Parse configuration data into typed objects
+- `dump_config(obj)`: Convert a config (tree of dataclasses) into a pure Python structure (JSON/YAML-ready)
+- `asdict(obj)`: Convert a dataclass (including `NonStrictDataclass`, with extras flattened) to a dictionary
 
 ## Enhanced Functionality
 
@@ -158,6 +162,53 @@ The parsing module has been enhanced to provide more robust and flexible configu
 -   Improved handling of nested configurations and unions.
 -   Enhanced type validation and error reporting.
 -   Support for parsing configurations from various data sources (e.g., JSON, YAML).
+
+### Non-Strict Dataclasses
+
+`NonStrictDataclass` is a dataclass base that may be extended at runtime with extra
+keyword arguments beyond its declared fields. Inheriting classes must use
+`@dataclass(init=False)` so the custom initializer is preserved:
+
+```python
+from dataclasses import dataclass, replace
+from compoconf import NonStrictDataclass, asdict
+
+@dataclass(init=False)
+class MyConfig(NonStrictDataclass):
+    a: int
+    b: str = "default_b"
+
+cfg = MyConfig(a=1, c="extra", d=3.14)   # c, d are "extras"
+cfg.c                                     # -> "extra"
+asdict(cfg)                               # -> {"a": 1, "b": "default_b", "c": "extra", "d": 3.14}
+replace(cfg, a=2)                         # extras are preserved across dataclasses.replace
+```
+
+It works with the standard `dataclasses` helpers (`replace`, `asdict`, `astuple`,
+`fields`), as well as `copy`/`deepcopy` and `pickle`.
+
+**Extras are untyped.** Extra attributes are stored as-is and are never type-checked or
+re-typed on parsing. Because of this, **extras must be plain data** (scalars, and
+arbitrarily nested `dict`/`list`/`tuple` of plain data). Storing a dataclass/config as an
+*extra* is **not supported** — it cannot be serialized or round-tripped through the parser,
+since there is no type information to reconstruct it.
+
+If you need a nested, typed config that round-trips, declare it as a real field instead of
+relying on extras. Make it optional by giving it a `Type | None = None` annotation so it is
+an explicit, parseable option:
+
+```python
+@dataclass(init=False)
+class Parent(NonStrictDataclass):
+    name: str = "p"
+    child: MyConfig | None = None        # typed, optional, round-trips through parse_config
+```
+
+For an immutable variant, inherit from `FrozenNonStrictDataclass` and decorate subclasses
+with `@dataclass(init=False, frozen=True)`. Frozen instances are read-only (declared fields
+*and* extras) and hashable. Note that a frozen non-strict dataclass must inherit from
+`FrozenNonStrictDataclass` — Python forbids a frozen dataclass inheriting from the
+non-frozen `NonStrictDataclass`.
 
 ### Util Module
 

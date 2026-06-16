@@ -14,7 +14,7 @@ from .compoconf import (  # pylint: disable=W0406
     register,
     register_interface,
 )
-from .nonstrict_dataclass import NonStrictDataclass, asdict  # pylint: disable=W0406
+from .nonstrict_dataclass import FrozenNonStrictDataclass, NonStrictDataclass, asdict  # pylint: disable=W0406
 from .parsing import dump_config, parse_config  # pylint: disable=W0406
 from .util import (  # pylint: disable=W0406
     ConfigError,
@@ -32,6 +32,7 @@ __version__ = "0.1.16"
 
 __all__ = [
     "NonStrictDataclass",
+    "FrozenNonStrictDataclass",
     "asdict",
     "LazyConfigUnion",
     "RegistrableConfigInterface",
