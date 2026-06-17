@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InitVar` support in `NonStrictDataclass` / `FrozenNonStrictDataclass`: InitVars participate in
   positional/keyword matching, are forwarded to `__post_init__`, and are not stored — matching
   stdlib dataclass behavior.
+- `compoconf.parse_file(config_class, path, ...)`: load a JSON or YAML file (format inferred from
+  the extension) and parse it into a typed config in one call.
+- `strict_types` option on `parse_config` / `parse_file`: when enabled, scalar fields
+  (`int`/`float`/`str`) are validated rather than coerced, so mismatched/lossy values (e.g. `"5"`
+  or `5.9` for an `int` field) raise instead of being silently converted. The only widening
+  allowed is `int` → `float`. Defaults to off, preserving the existing lenient behavior.
 
 ### Changed
 

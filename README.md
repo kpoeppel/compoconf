@@ -87,6 +87,31 @@ The library provides comprehensive type checking:
 - Checks for missing required fields
 - Supports strict mode for catching unknown configuration keys
 
+### Loading config files
+
+`parse_file` reads a JSON or YAML file (format inferred from the extension) and parses it into a
+typed config in one call:
+
+```python
+from compoconf import parse_file
+
+config = parse_file(ModelConfig, "config.yaml")   # or "config.json"
+```
+
+YAML support requires PyYAML (`pip install pyyaml`); JSON works out of the box.
+
+### Strict scalar parsing
+
+By default, scalar values are coerced to the annotated type (e.g. the string `"5"` becomes `5` for
+an `int` field, and a float is truncated to an `int`). Pass `strict_types=True` to `parse_config`
+(or `parse_file`) to reject mismatched scalars instead of silently converting them — useful for
+catching config typos. The only widening allowed is `int` → `float`.
+
+```python
+parse_config(MyConfig, {"n": "5"})                     # -> n == 5   (coerced)
+parse_config(MyConfig, {"n": "5"}, strict_types=True)  # -> raises ValueError
+```
+
 ### OmegaConf Integration
 
 CompoConf optionally integrates with OmegaConf for enhanced configuration handling:
@@ -172,7 +197,8 @@ reminds you to import (or `compoconf.load(...)`) the module that defines it.
 
 ### Functions
 
-- `parse_config(config_class, data, strict=True)`: Parse configuration data into typed objects
+- `parse_config(config_class, data, strict=True, strict_types=False)`: Parse configuration data into typed objects
+- `parse_file(config_class, path, *, strict=True, strict_types=False, file_format=None)`: Load a JSON/YAML file and parse it into a typed config
 - `dump_config(obj)`: Convert a config (tree of dataclasses) into a pure Python structure (JSON/YAML-ready)
 - `asdict(obj)`: Convert a dataclass (including `NonStrictDataclass`, with extras flattened) to a dictionary
 - `load(module, *, recurse=True)`: Import a module/package to run its registrations; returns the classes registered

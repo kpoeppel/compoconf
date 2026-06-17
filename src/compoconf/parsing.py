@@ -89,13 +89,14 @@ def _is_literal_instance(obj, clsann) -> bool:
         return False
 
 
-def _handle_list(data, args, key_history: str = "") -> list:
+def _handle_list(data, args, key_history: str = "", strict_types: bool = False) -> list:
     """Parse a list-like structure according to its element type.
 
     Args:
         data: The incoming raw list/tuple/config object.
         args: Type arguments for the list annotation.
         key_history: Dotted key path used for error reporting.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         Parsed list with elements converted via :func:`parse_config`.
@@ -108,11 +109,12 @@ def _handle_list(data, args, key_history: str = "") -> list:
         # args = (Any,)
         raise ValueError(f"List type must have exactly 1 type argument at key {key_history}")
     return [
-        parse_config(args[0], item, key_history=_extend_key_history(key_history, idx)) for idx, item in enumerate(data)
+        parse_config(args[0], item, key_history=_extend_key_history(key_history, idx), strict_types=strict_types)
+        for idx, item in enumerate(data)
     ]
 
 
-def _handle_set(data, args, origin, key_history: str = "") -> Set | FrozenSet:
+def _handle_set(data, args, origin, key_history: str = "", strict_types: bool = False) -> Set | FrozenSet:
     """Parse a set-like structure according to its element type.
 
     Args:
@@ -120,6 +122,7 @@ def _handle_set(data, args, origin, key_history: str = "") -> Set | FrozenSet:
         args: Type arguments describing the element type.
         origin: Original ``typing`` container type (``set`` or ``frozenset``).
         key_history: Dotted key path build-up for errors.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         A ``set`` or ``frozenset`` with elements converted via :func:`parse_config`.
@@ -132,18 +135,20 @@ def _handle_set(data, args, origin, key_history: str = "") -> Set | FrozenSet:
         # Don't allow untyped set
         raise ValueError(f"Set type must have exactly 1 type argument at key {key_history}")
     parsed_items = [
-        parse_config(args[0], item, key_history=_extend_key_history(key_history, idx)) for idx, item in enumerate(data)
+        parse_config(args[0], item, key_history=_extend_key_history(key_history, idx), strict_types=strict_types)
+        for idx, item in enumerate(data)
     ]
     return frozenset(parsed_items) if origin in (frozenset, FrozenSet) else set(parsed_items)
 
 
-def _handle_tuple(data, args, key_history: str = "") -> tuple:
+def _handle_tuple(data, args, key_history: str = "", strict_types: bool = False) -> tuple:
     """Parse a tuple according to its element arity and types.
 
     Args:
         data: The incoming raw tuple/list/config object.
         args: Type arguments for the tuple annotation.
         key_history: Dotted key path used for error reporting.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         Tuple of parsed values matching the declared type annotation.
@@ -160,18 +165,19 @@ def _handle_tuple(data, args, key_history: str = "") -> tuple:
     if len(args) != len(data):
         raise ValueError(f"Expected {len(args)} items, got {len(data)} at key {key_history}")
     return tuple(
-        parse_config(arg_type, item, key_history=_extend_key_history(key_history, idx))
+        parse_config(arg_type, item, key_history=_extend_key_history(key_history, idx), strict_types=strict_types)
         for idx, (arg_type, item) in enumerate(zip(args, data))
     )
 
 
-def _handle_dict(data, args, key_history: str = "") -> dict[str, Any]:
+def _handle_dict(data, args, key_history: str = "", strict_types: bool = False) -> dict[str, Any]:
     """Parse a mapping by converting both keys and values.
 
     Args:
         data: The incoming dictionary-like object.
         args: Two type arguments describing key and value types.
         key_history: Dotted key path for error reporting.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         Dictionary with keys/values converted via :func:`parse_config`.
@@ -187,15 +193,15 @@ def _handle_dict(data, args, key_history: str = "") -> dict[str, Any]:
         raise ValueError(f"Expected dict, got {type(data)} at key {key_history}")
     for key, value in data.items():
         child_key_history = _extend_key_history(key_history, key)
-        parsed_key = parse_config(key_type, key, key_history=child_key_history)
-        parsed_value = parse_config(value_type, value, key_history=child_key_history)
+        parsed_key = parse_config(key_type, key, key_history=child_key_history, strict_types=strict_types)
+        parsed_value = parse_config(value_type, value, key_history=child_key_history, strict_types=strict_types)
         result[parsed_key] = parsed_value
     # if not isinstance(data, (dict, DictConfig)):
     #     raise ValueError(f"Expected dict, got {type(data)}")
     return result
 
 
-def _parse_compositional_types(origin, args, data, key_history: str = "") -> Any:
+def _parse_compositional_types(origin, args, data, key_history: str = "", strict_types: bool = False) -> Any:
     """
     Parse data to a compositional generic origin type with args.
     E.g. _parse_compositional_types(dict, (str, str), {"abc": "abc"})
@@ -204,25 +210,27 @@ def _parse_compositional_types(origin, args, data, key_history: str = "") -> Any
         origin: Generic type.
         args: Generic type args.
         data: Data to be parsed into object.
+        key_history: Dotted key path for error reporting.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         Object of origin[args] type from parsed data.
     """
     # Handle dict types (both typing.Dict and dict)
     if origin in (dict, Dict):
-        return _handle_dict(data, args, key_history=key_history)
+        return _handle_dict(data, args, key_history=key_history, strict_types=strict_types)
 
     # Handle list types (both typing.List and list)
     if origin in (list, List, Sequence, tSequence):
-        return _handle_list(data, args, key_history=key_history)
+        return _handle_list(data, args, key_history=key_history, strict_types=strict_types)
 
     # Handle set types (typing.Set, set, typing.FrozenSet, frozenset)
     if origin in (set, Set, frozenset, FrozenSet):
-        return _handle_set(data, args, origin, key_history=key_history)
+        return _handle_set(data, args, origin, key_history=key_history, strict_types=strict_types)
 
     # Handle tuple types (both typing.Tuple and tuple)
     if origin in (tuple, Tuple):
-        return _handle_tuple(data, args, key_history=key_history)
+        return _handle_tuple(data, args, key_history=key_history, strict_types=strict_types)
 
     return None
 
@@ -276,7 +284,9 @@ def _handle_unset_key(config_class: type, key: str) -> bool:
     return False
 
 
-def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_history: str = "") -> Any:
+def _handle_dataclass(
+    config_class: type, data: Any, strict: bool = True, key_history: str = "", strict_types: bool = False
+) -> Any:
     """
     Handle the dataclass case for config_class in parse_config.
 
@@ -284,6 +294,8 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
         config_class: The target configuration class (here only a dataclass)
         data: The configuration data to parse (dict, list, or primitive type)
         strict: If True, raises error on unknown keys in data
+        key_history: Dotted key path for error reporting.
+        strict_types: Forwarded to :func:`parse_config` to disable silent scalar coercion.
 
     Returns:
         An instance of config_class initialized with the parsed data
@@ -318,7 +330,7 @@ def _handle_dataclass(config_class: type, data: Any, strict: bool = True, key_hi
                 key_type = resolved_dataclass
             if key != "class_name":
                 dataclass_dict[key] = parse_config(
-                    key_type, data[key], key_history=_extend_key_history(key_history, key)
+                    key_type, data[key], key_history=_extend_key_history(key_history, key), strict_types=strict_types
                 )
         elif _handle_unset_key(config_class, key):
             unset_keys.add(key)
@@ -397,13 +409,48 @@ def _handle_bool(data: Any, key_history: str = "") -> bool:
     raise ValueError(f"Could not parse {data} in bool at key {key_history}")
 
 
-def _handle_base_types_and_literals(config_class: type, data: Any, key_history: str = "") -> Any:
+def _coerce_scalar_strict(config_class: type, data: Any, key_history: str = "") -> Any:
+    """Accept a scalar value without silent coercion (used when ``strict_types`` is enabled).
+
+    Rejects mismatched scalar types -- e.g. the string ``"5"`` for an ``int`` field, or a
+    ``float`` for an ``int`` field -- instead of silently converting (and possibly truncating)
+    them. The only widening allowed is ``int`` -> ``float`` (lossless). ``bool`` is never accepted
+    for ``int``/``float`` even though it is a subclass of ``int``.
+
+    Args:
+        config_class: One of ``int``, ``float`` or ``str``.
+        data: Input value to validate.
+        key_history: Dotted key path for error reporting.
+
+    Returns:
+        ``data`` (or ``float(data)`` for the int -> float widening case).
+
+    Raises:
+        ValueError: If ``data`` does not already match ``config_class``.
+    """
+    if isinstance(data, bool):
+        raise ValueError(f"Expected {config_class.__name__}, got bool ({data!r}) at key {key_history}")
+    if config_class is float and isinstance(data, int):
+        return float(data)
+    if isinstance(data, config_class):
+        return data
+    raise ValueError(
+        f"Expected {config_class.__name__}, got {type(data).__name__} ({data!r}) at key {key_history} "
+        "(strict_types=True disables silent coercion)"
+    )
+
+
+def _handle_base_types_and_literals(
+    config_class: type, data: Any, key_history: str = "", strict_types: bool = False
+) -> Any:
     """Handle primitive, bool, and literal parsing fallbacks.
 
     Args:
         config_class: Target type to coerce into.
         data: Input value provided by the user.
         key_history: Dotted key path for error reporting.
+        strict_types: If True, scalar types (``int``/``float``/``str``) are validated rather than
+            coerced, so mismatched values raise instead of being silently converted.
 
     Returns:
         Parsed value matching ``config_class`` or the original data for literals.
@@ -413,6 +460,8 @@ def _handle_base_types_and_literals(config_class: type, data: Any, key_history: 
 
     # Handle primitive types and dataclasses
     if isinstance(config_class, type) and config_class is not Any:
+        if strict_types and config_class in (int, float, str):
+            return _coerce_scalar_strict(config_class, data, key_history=key_history)
         try:
             return config_class(data)
         except (ValueError, KeyError, TypeError) as exc:
@@ -423,7 +472,7 @@ def _handle_base_types_and_literals(config_class: type, data: Any, key_history: 
     raise TypeError(f"Invalid type {config_class}")
 
 
-def parse_config(config_class: type, data: Any, strict: bool = True, key_history: str = ""):
+def parse_config(config_class: type, data: Any, strict: bool = True, key_history: str = "", strict_types: bool = False):
     """
     Parse a dictionary of configuration data into a strongly typed configuration object.
 
@@ -435,6 +484,11 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
         config_class: The target configuration class (typically a dataclass)
         data: The configuration data to parse (dict, list, or primitive type)
         strict: If True, raises error on unknown keys in data
+        key_history: Dotted key path for error reporting (used internally during recursion).
+        strict_types: If True, scalar fields (``int``/``float``/``str``) are validated instead of
+            coerced. By default (False), values are coerced via the target type (e.g. the string
+            ``"5"`` becomes ``5`` for an ``int`` field); enabling this rejects such mismatches so
+            silent/lossy conversions surface as errors. Applies recursively to nested fields.
 
     Returns:
         An instance of config_class initialized with the parsed data
@@ -461,13 +515,13 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
         and config_class is not Any
         or (isclass(config_class) and issubclass(config_class, dict) and config_class is not dict)
     ):
-        return _handle_dataclass(config_class, data, strict=strict, key_history=key_history)
+        return _handle_dataclass(config_class, data, strict=strict, key_history=key_history, strict_types=strict_types)
     # Handle both typing.* and built-in collection types
     origin = getattr(config_class, "__origin__", config_class)
     args = getattr(config_class, "__args__", None)
 
     if origin in (list, List, dict, Dict, tuple, Tuple, Sequence, set, Set, frozenset, FrozenSet):
-        return _parse_compositional_types(origin, args, data, key_history=key_history)
+        return _parse_compositional_types(origin, args, data, key_history=key_history, strict_types=strict_types)
 
     is_union_base = (hasattr(config_class, "__name__") and config_class.__name__ == "Union") or (
         hasattr(config_class, "__or__") and (get_origin(config_class) in {Union, UnionType})
@@ -487,7 +541,7 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
         errors = []
         for option in union_types:
             try:
-                return parse_config(option, data, key_history=key_history)
+                return parse_config(option, data, key_history=key_history, strict_types=strict_types)
             except (ValueError, KeyError, TypeError) as e:
                 errors.append((option, e))
                 continue
@@ -508,7 +562,7 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
         )
 
     # handle bool
-    return _handle_base_types_and_literals(config_class, data, key_history=key_history)
+    return _handle_base_types_and_literals(config_class, data, key_history=key_history, strict_types=strict_types)
 
 
 def dump_config(a: Any) -> Any:

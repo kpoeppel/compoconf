@@ -16,6 +16,7 @@ from .compoconf import (  # pylint: disable=W0406
     register_interface,
     registered,
 )
+from .io_utils import parse_file  # pylint: disable=W0406
 from .nonstrict_dataclass import FrozenNonStrictDataclass, NonStrictDataclass, asdict  # pylint: disable=W0406
 from .parsing import dump_config, parse_config  # pylint: disable=W0406
 from .util import (  # pylint: disable=W0406
@@ -45,6 +46,7 @@ __all__ = [
     "load",
     "registered",
     "parse_config",
+    "parse_file",
     "dump_config",
     "partial_call",
     "from_annotations",

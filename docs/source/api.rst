@@ -47,6 +47,8 @@ Configuration Parsing and Serialization
 
 .. autofunction:: compoconf.parse_config
 
+.. autofunction:: compoconf.parse_file
+
 .. autofunction:: compoconf.dump_config
 
 .. autofunction:: compoconf.asdict
