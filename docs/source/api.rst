@@ -42,10 +42,34 @@ Decorators
 
 .. autofunction:: compoconf.register_interface
 
-Configuration Parsing
----------------------
+Configuration Parsing and Serialization
+---------------------------------------
 
 .. autofunction:: compoconf.parse_config
+
+.. autofunction:: compoconf.dump_config
+
+.. autofunction:: compoconf.asdict
+
+
+Registry Discovery and Introspection
+------------------------------------
+
+.. autofunction:: compoconf.load
+
+.. autofunction:: compoconf.registered
+
+
+Non-Strict Dataclasses
+----------------------
+
+.. autoclass:: compoconf.NonStrictDataclass
+   :members:
+   :show-inheritance:
+
+.. autoclass:: compoconf.FrozenNonStrictDataclass
+   :members:
+   :show-inheritance:
 
 
 Type Variables
@@ -53,8 +77,10 @@ Type Variables
 
 .. py:data:: compoconf.RegistrableConfigInterface.cfgtype
 
-   A TypeVar representing the configuration type for a registrable interface.
-   This is dynamically created based on the registered implementations of the interface.
+   A lazy proxy (:class:`compoconf.LazyConfigUnion`) representing the union of all configuration
+   types registered under a registrable interface. Resolution of the registered implementations is
+   deferred until parse time, so it is safe to use as a field annotation even before all
+   implementations have been imported and registered.
 
    Example:
 

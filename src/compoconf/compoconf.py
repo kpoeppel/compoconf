@@ -37,9 +37,12 @@ Example:
             self.config = config
 """
 
+import importlib
 import logging
+import pkgutil
 from dataclasses import dataclass, field
-from typing import Any, Optional, Type, get_type_hints
+from types import ModuleType
+from typing import Any, Optional, Type, Union, get_type_hints
 
 from compoconf.nonstrict_dataclass import asdict
 
@@ -102,7 +105,11 @@ class LazyConfigUnion:
             if cfg_cls is not None:
                 cfg_classes.append(cfg_cls)
         if len(cfg_classes) == 0:
-            LOGGER.warning(f"No option for this type {self._interface} registry")
+            LOGGER.warning(
+                "No implementations registered for interface '%s'. Did you import the modules that "
+                "define and @register them (e.g. via compoconf.load(...))?",
+                self._interface.__name__,
+            )
         return tuple(cfg_classes)
 
     @property
@@ -343,11 +350,65 @@ class _RegistrySingleton:
         Note that this way (even though they should not) a name can exist
         multiple times in different registries for different classes.
         """
-        if self._unique_name(registry_interface) in self._registries:
-            if name in self._registries[self._unique_name(registry_interface)]:
-                return self._registries[self._unique_name(registry_interface)][name]
-            raise KeyError(f"{name} not found in registry {self._unique_name(registry_interface)}")
-        raise KeyError(f"No such registry interface {self._unique_name(registry_interface)}")
+        unique_name = self._unique_name(registry_interface)
+        if unique_name in self._registries:
+            registry = self._registries[unique_name]
+            if name in registry:
+                return registry[name]
+            raise KeyError(
+                f"'{name}' is not registered for interface '{unique_name}'. "
+                f"Registered implementations: {sorted(registry)}. "
+                "If you expect it to exist, make sure the module that defines and @register's it "
+                "has been imported (e.g. via compoconf.load(...))."
+            )
+        raise KeyError(
+            f"No registry for interface '{unique_name}'. "
+            "Decorate the interface with @register_interface and import the module that defines it "
+            "(e.g. via compoconf.load(...))."
+        )
+
+    def registered(self, registry_interface: Optional[type] = None):
+        """
+        Introspect the registry.
+
+        Args:
+            registry_interface: If given, return the sorted list of implementation names registered
+                for that interface.  If ``None``, return a mapping of every interface class to its
+                sorted list of registered implementation names.
+
+        Returns:
+            A list of names (when ``registry_interface`` is given) or a ``{interface_cls: [names]}``
+            mapping otherwise.
+
+        Raises:
+            KeyError: If ``registry_interface`` is given but has no registry.
+        """
+        if registry_interface is not None:
+            unique_name = self._unique_name(registry_interface)
+            if unique_name not in self._registries:
+                raise KeyError(
+                    f"No registry for interface '{unique_name}'. "
+                    "Decorate it with @register_interface and import the module that defines it."
+                )
+            return sorted(self._registries[unique_name])
+        return {
+            self._registry_classes[unique_name]: sorted(registry) for unique_name, registry in self._registries.items()
+        }
+
+    def implementations(self) -> list:
+        """
+        Return all registered implementation classes, de-duplicated, in registration order.
+
+        A class registered under several interfaces (via inheritance) appears only once.
+        """
+        seen: set = set()
+        result: list = []
+        for registry in self._registries.values():
+            for cls in registry.values():
+                if id(cls) not in seen:
+                    seen.add(id(cls))
+                    result.append(cls)
+        return result
 
     def __str__(self):
         st = (
@@ -413,6 +474,53 @@ def register_interface(cls):
     """
     Registry.add_registry(cls)
     return cls
+
+
+def load(module: Union[str, ModuleType], *, recurse: bool = True) -> list:
+    """
+    Import a module (or package) so its ``@register`` / ``@register_interface`` decorators run.
+
+    Registration in CompoConf happens as a side effect of importing the module that defines a
+    class.  This helper makes that explicit and verifiable: it imports the given module and, for a
+    package, optionally walks and imports all of its submodules, then returns the implementation
+    classes that became registered as a result.
+
+    Args:
+        module: A dotted module/package path (e.g. ``"mypackage.models"``) or an already-imported
+            module object.
+        recurse: If ``True`` (default) and ``module`` is a package, recursively import every
+            submodule so all of their registrations run.
+
+    Returns:
+        The implementation classes newly registered by this call, in registration order (empty if
+        everything was already imported/registered).
+
+    Example:
+        >>> import compoconf
+        >>> compoconf.load("mypackage.models")           # doctest: +SKIP
+        [<class 'mypackage.models.MLPModel'>, ...]
+    """
+    before = {id(cls) for cls in Registry.implementations()}
+    mod = importlib.import_module(module) if isinstance(module, str) else module
+    if recurse and hasattr(mod, "__path__"):
+        for info in pkgutil.walk_packages(mod.__path__, prefix=mod.__name__ + "."):
+            importlib.import_module(info.name)
+    return [cls for cls in Registry.implementations() if id(cls) not in before]
+
+
+def registered(interface: Optional[type] = None):
+    """
+    Introspect the registry of interfaces and their registered implementations.
+
+    Args:
+        interface: If given, return the sorted list of implementation names registered for that
+            interface.  If ``None``, return a ``{interface_cls: [names]}`` mapping for every
+            registered interface.
+
+    Returns:
+        A list of names (when ``interface`` is given) or a ``{interface_cls: [names]}`` mapping.
+    """
+    return Registry.registered(interface)
 
 
 @dataclass

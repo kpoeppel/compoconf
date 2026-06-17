@@ -252,7 +252,7 @@ def test_no_options_warning(reset_registry, caplog):
     assert isinstance(lazy, LazyConfigUnion)
     # Warning is deferred until constraints are actually resolved
     _ = lazy.__constraints__
-    assert "No option for this type" in caplog.text
+    assert "No implementations registered for interface 'EmptyInterface'" in caplog.text
 
 
 def test_missing_config_class(reset_registry):

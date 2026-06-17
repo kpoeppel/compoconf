@@ -132,6 +132,29 @@ config = {
 }
 ```
 
+#### Discovering and inspecting registrations
+
+Registration happens as a side effect of importing the module that defines a class. If the module
+is never imported, the implementation is never registered — which previously surfaced as a confusing
+downstream error. CompoConf makes this explicit and debuggable:
+
+```python
+import compoconf
+
+# Import a module/package so its @register decorators run; returns what got registered.
+compoconf.load("mypackage.models")               # single module
+compoconf.load("mypackage", recurse=True)        # whole package (walks submodules)
+# -> [<class 'mypackage.models.MLPModel'>, <class 'mypackage.models.CNNModel'>, ...]
+
+# Inspect the current registry.
+compoconf.registered()                # {ModelInterface: ["CNNModel", "TransformerModel"], ...}
+compoconf.registered(ModelInterface)  # ["CNNModel", "TransformerModel"]
+print(Registry)                       # full human-readable dump
+```
+
+If a `class_name` is requested that isn't registered, the error now lists the available options and
+reminds you to import (or `compoconf.load(...)`) the module that defines it.
+
 ## API Reference
 
 ### Core Classes
@@ -152,6 +175,8 @@ config = {
 - `parse_config(config_class, data, strict=True)`: Parse configuration data into typed objects
 - `dump_config(obj)`: Convert a config (tree of dataclasses) into a pure Python structure (JSON/YAML-ready)
 - `asdict(obj)`: Convert a dataclass (including `NonStrictDataclass`, with extras flattened) to a dictionary
+- `load(module, *, recurse=True)`: Import a module/package to run its registrations; returns the classes registered
+- `registered(interface=None)`: Introspect the registry (names per interface, or a full mapping)
 
 ## Enhanced Functionality
 
@@ -210,13 +235,43 @@ with `@dataclass(init=False, frozen=True)`. Frozen instances are read-only (decl
 `FrozenNonStrictDataclass` — Python forbids a frozen dataclass inheriting from the
 non-frozen `NonStrictDataclass`.
 
+**Limitations and notes:**
+
+- Subclasses must use `@dataclass(init=False)` (or `@dataclass(init=False, frozen=True)` for the
+  frozen variant) so the shared custom initializer is inherited rather than regenerated.
+- `InitVar` fields are supported: they are forwarded to `__post_init__` (in declaration order) and
+  are not stored. On the frozen variant, a `__post_init__` that derives fields must assign via
+  `object.__setattr__`, as with any frozen dataclass.
+- A frozen non-strict dataclass must inherit from `FrozenNonStrictDataclass`; Python forbids a
+  frozen subclass of the non-frozen `NonStrictDataclass`.
+- Extras are untyped plain data only (scalars / nested `dict`/`list`/`tuple`); see above.
+
 ### Util Module
 
-The util module now includes powerful utilities for dynamic configuration and validation:
+The util module includes utilities for dynamic configuration and validation:
 
--   `partial_call`: Enables the creation of configurable classes from functions, allowing for dynamic modification of function arguments through configuration.
--   `from_annotations`: Simplifies the creation of configurable classes by automatically extracting configuration parameters from class annotations.
--   `validate_literal_field` and `assert_check_literals`: Provide mechanisms for validating Literal type annotations in dataclasses, ensuring that configuration values are within the allowed set of options.
+-   `partial_call`: Turn a plain function into a registered, config-driven implementation of an
+    interface — the config supplies the function's arguments. See the API docs for the full
+    signature and an example.
+-   `from_annotations`: Build and register a config-driven implementation from an existing class,
+    deriving the configuration fields from that class's constructor annotations. See the API docs.
+-   `validate_literal_field` / `assert_check_literals`: Validate that `Literal`-typed fields hold an
+    allowed value.
+
+```python
+from dataclasses import dataclass
+from typing import Literal
+
+from compoconf import ConfigInterface, assert_check_literals, validate_literal_field
+
+@dataclass
+class OptimizerConfig(ConfigInterface):
+    mode: Literal["adam", "sgd"] = "adam"
+
+cfg = OptimizerConfig(mode="adam")
+validate_literal_field(cfg, "mode")   # -> True
+assert_check_literals(cfg)            # raises compoconf.LiteralError if any Literal field is invalid
+```
 
 ## Contributing
 
