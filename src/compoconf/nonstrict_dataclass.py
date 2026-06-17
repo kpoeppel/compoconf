@@ -2,26 +2,51 @@
 This submodule introduces an adapted dataclass interface that enables a runtime extension of a dataclass.
 """
 
+import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from typing import Any
+
+# ``_FIELD`` / ``_FIELD_INITVAR`` are private sentinels, but they are the canonical (and only)
+# way to tell a real field from an ``InitVar`` pseudo-field, which is required to forward
+# InitVars to ``__post_init__`` the way the stdlib-generated ``__init__`` does.  Accessed via
+# ``getattr`` so static type checkers don't flag the private module attributes.
+_FIELD = getattr(dataclasses, "_FIELD")
+_FIELD_INITVAR = getattr(dataclasses, "_FIELD_INITVAR")
 
 # internal bookkeeping fields, managed explicitly in ``_nonstrict_init`` and kept out of
 # the positional/keyword arg matching so they never shadow user-declared fields.
 _INTERNAL_FIELDS = ("_extras", "_non_strict")
 
 
-def _nonstrict_init(self, args, kwargs):
+def _iter_init_params(cls):
+    """Yield ``(field, is_initvar)`` for each init parameter of ``cls`` in declaration order.
+
+    Unlike :func:`dataclasses.fields`, this includes ``InitVar`` pseudo-fields (so they can be
+    forwarded to ``__post_init__``) while excluding ``ClassVar`` pseudo-fields and the internal
+    bookkeeping fields.  The order matches the stdlib-generated ``__init__`` signature.
+    """
+    for f in cls.__dataclass_fields__.values():
+        field_type = f._field_type  # pylint: disable=protected-access
+        if f.init and field_type in (_FIELD, _FIELD_INITVAR) and f.name not in _INTERNAL_FIELDS:
+            yield f, field_type is _FIELD_INITVAR
+
+
+def _nonstrict_init(self, args, kwargs):  # pylint: disable=too-many-locals
     """Shared ``__init__`` body for the (frozen) non-strict dataclasses.
 
     Uses ``object.__setattr__`` for every assignment so the exact same logic works for
     both mutable and ``frozen=True`` subclasses (a frozen ``__setattr__`` would reject
     plain ``setattr``, exactly as the stdlib-generated frozen ``__init__`` does).
 
+    ``InitVar`` pseudo-fields are supported: they participate in positional/keyword argument
+    matching, are *not* stored as attributes, and are forwarded to ``__post_init__`` in
+    declaration order, mirroring stdlib dataclass behavior.
+
     Args:
         self: The instance being initialized.
-        args: Positional arguments mapped onto the declared (user) fields, in order.
-        kwargs: Keyword arguments; declared field names are consumed, everything else
+        args: Positional arguments mapped onto the init parameters (fields and InitVars), in order.
+        kwargs: Keyword arguments; init-parameter names are consumed, everything else
             becomes an "extra" attribute.  A ``_extras`` kwarg (fed back by
             ``dataclasses.replace`` / stdlib-``asdict``-shaped dicts) seeds the extras.
     """
@@ -32,26 +57,32 @@ def _nonstrict_init(self, args, kwargs):
     base_extras = dict(kwargs.pop("_extras", {}) or {})
     kwargs.pop("_non_strict", None)
 
-    # look at *runtime* class so this also sees subclass fields
-    declared = [f for f in fields(type(self)) if f.init and f.name not in _INTERNAL_FIELDS]
-    declared_names = {f.name for f in declared}
+    # look at the *runtime* class so this also sees subclass fields and InitVars
+    init_params = list(_iter_init_params(type(self)))
+    param_names = {f.name for f, _ in init_params}
 
-    # split kwargs into declared vs extras
-    init_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in declared_names}
+    # split kwargs into init parameters vs extras
+    init_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in param_names}
     extra_kwargs = kwargs
 
-    # assign declared fields (replicates dataclass auto-init)
-    for f, val in zip(declared, args):
-        set_(self, f.name, val)
-    for f in declared[len(args) :]:
-        if f.name in init_kwargs:
-            set_(self, f.name, init_kwargs[f.name])
+    # resolve each init parameter (positional, keyword, or default); InitVars are collected
+    # for __post_init__ instead of being stored, everything else replicates dataclass auto-init
+    initvars = []
+    for idx, (f, is_initvar) in enumerate(init_params):
+        if idx < len(args):
+            value = args[idx]
+        elif f.name in init_kwargs:
+            value = init_kwargs[f.name]
         elif f.default is not MISSING:
-            set_(self, f.name, f.default)
+            value = f.default
         elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
-            set_(self, f.name, f.default_factory())  # type: ignore[attr-defined]
+            value = f.default_factory()  # type: ignore[attr-defined]
         else:
             raise TypeError(f"Missing required argument: {f.name}")
+        if is_initvar:
+            initvars.append(value)
+        else:
+            set_(self, f.name, value)
 
     # stash and attach extras: replace()-supplied ``_extras`` first, then any loose
     # keyword arguments (so an explicitly passed extra overrides the round-tripped one)
@@ -60,7 +91,7 @@ def _nonstrict_init(self, args, kwargs):
     for k, v in extras.items():
         set_(self, k, v)
     set_(self, "_non_strict", True)
-    self.__post_init__()
+    self.__post_init__(*initvars)
 
 
 class _NonStrictDataclassBase:

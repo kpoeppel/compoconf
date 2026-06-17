@@ -306,23 +306,81 @@ def test_frozen_subclass_of_mutable_base_is_rejected():
             a: int = 1
 
 
-def test_initvar_is_unsupported():
-    """``InitVar`` is not forwarded to ``__post_init__`` by the custom ``__init__``.
-
-    The custom ``__init__`` calls ``self.__post_init__()`` with no arguments, so
-    InitVar pseudo-fields are not supported.  Pinned here to document the gap.
-    """
+# --------------------------------------------------------------------------- #
+# InitVar support                                                              #
+# --------------------------------------------------------------------------- #
+def test_initvar_forwarded_to_post_init_and_not_stored():
+    """An InitVar reaches ``__post_init__``, is not stored, and coexists with extras."""
 
     @dataclass(init=False)
-    class _WithInitVar(NonStrictDataclass):
+    class WithInitVar(NonStrictDataclass):
+        """NonStrict dataclass with an InitVar consumed by __post_init__."""
+
         a: int = 1
         seed: InitVar[int] = 0
+        b: int = 0
 
         def __post_init__(self, seed):  # pylint: disable=arguments-differ
-            self.a += seed
+            self.b = self.a + seed
 
+    obj = WithInitVar(a=2, seed=5, extra="x")
+    assert obj.b == 7  # __post_init__ received the InitVar
+    assert "seed" not in obj.__dict__  # InitVar is never stored on the instance
+    assert obj.extra == "x"  # extras still work alongside InitVars  # pylint: disable=E1101
+    assert obj._extras == {"extra": "x"}  # pylint: disable=W0212
+    assert asdict(obj) == {"a": 2, "b": 7, "extra": "x"}  # InitVar absent from the dump
+
+
+def test_initvar_positional_and_required():
+    """InitVars participate in positional matching and may be required (no default)."""
+
+    @dataclass(init=False)
+    class Interleaved(NonStrictDataclass):
+        """InitVar between two regular fields to check positional ordering."""
+
+        a: int = 0
+        seed: InitVar[int] = 0
+        out: int = 0
+
+        def __post_init__(self, seed):  # pylint: disable=arguments-differ
+            self.out = self.a + seed
+
+    assert Interleaved(3, 10).out == 13  # positional: a=3, seed=10
+
+    @dataclass(init=False)
+    class RequiredInitVar(NonStrictDataclass):
+        """An InitVar with no default is a required argument."""
+
+        seed: InitVar[int]
+        out: int = 0
+
+        def __post_init__(self, seed):  # pylint: disable=arguments-differ
+            self.out = seed
+
+    assert RequiredInitVar(seed=7).out == 7
     with pytest.raises(TypeError):
-        _WithInitVar(a=1, seed=5)
+        RequiredInitVar()
+
+
+def test_frozen_initvar_is_supported():
+    """InitVars work on the frozen variant (``__post_init__`` uses ``object.__setattr__``)."""
+
+    @dataclass(init=False, frozen=True)
+    class FrozenWithInitVar(FrozenNonStrictDataclass):
+        """Frozen NonStrict dataclass deriving a field from an InitVar."""
+
+        a: int = 1
+        seed: InitVar[int] = 0
+        b: int = 0
+
+        def __post_init__(self, seed):  # pylint: disable=arguments-differ
+            object.__setattr__(self, "b", self.a + seed)
+
+    obj = FrozenWithInitVar(a=2, seed=5, y="Y")
+    assert obj.b == 7
+    assert obj.y == "Y"  # pylint: disable=E1101
+    # replace re-runs __init__/__post_init__; the InitVar falls back to its default (0)
+    assert replace(obj, a=10).b == 10
 
 
 # --------------------------------------------------------------------------- #
