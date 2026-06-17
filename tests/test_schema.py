@@ -224,16 +224,16 @@ def test_cfgtype_union_and_class_name_const(reset_registry):  # pylint: disable=
         """Interface fixture."""
 
     @dataclass
-    class MLPConfig(ConfigInterface):
+    class MyObjConfig(ConfigInterface):
         """Registered config."""
 
         h: int = 8
 
     @register
-    class MLP(ModelInterface):  # pylint: disable=unused-variable
+    class MyObj(ModelInterface):  # pylint: disable=unused-variable
         """Impl."""
 
-        config_class = MLPConfig
+        config_class = MyObjConfig
 
     @dataclass
     class Container(ConfigInterface):
@@ -243,8 +243,8 @@ def test_cfgtype_union_and_class_name_const(reset_registry):  # pylint: disable=
 
     schema = to_json_schema(Container)
     model_schema = schema["$defs"]["Container"]["properties"]["model"]
-    assert model_schema["anyOf"] == [{"$ref": "#/$defs/MLPConfig"}]
-    assert schema["$defs"]["MLPConfig"]["properties"]["class_name"] == {"const": "MLP"}
+    assert model_schema["anyOf"] == [{"$ref": "#/$defs/MyObjConfig"}]
+    assert schema["$defs"]["MyObjConfig"]["properties"]["class_name"] == {"const": "MyObj"}
 
 
 # --------------------------------------------------------------------------- #
