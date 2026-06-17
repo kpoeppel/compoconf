@@ -7,6 +7,7 @@ import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import MISSING, fields, is_dataclass
+from enum import Enum
 from inspect import isclass
 from typing import Any, Dict, FrozenSet, List, Literal
 from typing import Sequence as tSequence
@@ -440,8 +441,42 @@ def _coerce_scalar_strict(config_class: type, data: Any, key_history: str = "") 
     )
 
 
+def _handle_enum(enum_class: type[Enum], data: Any, key_history: str = "") -> Any:
+    """Parse a value into an :class:`enum.Enum` member.
+
+    Accepts an existing member of ``enum_class``, a string matching a member *name*, or a member
+    *value* (via ``enum_class(data)``). This makes both ``{"color": "RED"}`` (by name) and
+    ``{"color": "red"}`` (by value, for ``RED = "red"``) work.
+
+    Args:
+        enum_class: The target ``Enum`` subclass.
+        data: Input value (member, name, or value).
+        key_history: Dotted key path for error reporting.
+
+    Returns:
+        The matching enum member.
+
+    Raises:
+        ValueError: If ``data`` matches neither a member name nor a member value.
+    """
+    if isinstance(data, enum_class):
+        return data
+    members = enum_class.__members__
+    if isinstance(data, str) and data in members:
+        return members[data]
+    try:
+        return enum_class(data)
+    except ValueError as exc:
+        names = list(members)
+        values = [member.value for member in members.values()]
+        raise ValueError(
+            f"Could not parse {data!r} into enum {enum_class.__name__} at key {key_history}; "
+            f"expected one of names {names} or values {values}."
+        ) from exc
+
+
 def _handle_base_types_and_literals(
-    config_class: type, data: Any, key_history: str = "", strict_types: bool = False
+    config_class: Any, data: Any, key_history: str = "", strict_types: bool = False
 ) -> Any:
     """Handle primitive, bool, and literal parsing fallbacks.
 
@@ -457,6 +492,10 @@ def _handle_base_types_and_literals(
     """
     if config_class is bool:
         return _handle_bool(data, key_history=key_history)
+
+    # Enums: accept a member, a member name, or a member value
+    if isinstance(config_class, type) and issubclass(config_class, Enum):
+        return _handle_enum(config_class, data, key_history=key_history)
 
     # Handle primitive types and dataclasses
     if isinstance(config_class, type) and config_class is not Any:

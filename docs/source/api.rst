@@ -51,6 +51,8 @@ Configuration Parsing and Serialization
 
 .. autofunction:: compoconf.dump_config
 
+.. autofunction:: compoconf.to_json_schema
+
 .. autofunction:: compoconf.asdict
 
 

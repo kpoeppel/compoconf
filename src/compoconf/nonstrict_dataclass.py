@@ -5,6 +5,7 @@ This submodule introduces an adapted dataclass interface that enables a runtime 
 import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
+from enum import Enum
 from typing import Any
 
 # ``_FIELD`` / ``_FIELD_INITVAR`` are private sentinels, but they are the canonical (and only)
@@ -227,7 +228,7 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
     """
     seen = set()  # recursion guard by id()
 
-    def convert(o, use_to_dict: bool = True):
+    def convert(o, use_to_dict: bool = True):  # pylint: disable=too-many-return-statements
         oid = id(o)
         if oid in seen:
             # Match stdlib behavior: raise on cycles
@@ -249,6 +250,10 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
                     items.append((f.name, convert(getattr(o, f.name))))
 
                 return dict_factory(items)
+
+            # 2b) Enums serialize to their value (round-trips via parse-by-value)
+            if isinstance(o, Enum):
+                return o.value
 
             # 3) Mappings
             if isinstance(o, Mapping):

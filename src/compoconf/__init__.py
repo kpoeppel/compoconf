@@ -19,6 +19,7 @@ from .compoconf import (  # pylint: disable=W0406
 from .io_utils import parse_file  # pylint: disable=W0406
 from .nonstrict_dataclass import FrozenNonStrictDataclass, NonStrictDataclass, asdict  # pylint: disable=W0406
 from .parsing import dump_config, parse_config  # pylint: disable=W0406
+from .schema import to_json_schema  # pylint: disable=W0406
 from .util import (  # pylint: disable=W0406
     ConfigError,
     LiteralError,
@@ -48,6 +49,7 @@ __all__ = [
     "parse_config",
     "parse_file",
     "dump_config",
+    "to_json_schema",
     "partial_call",
     "from_annotations",
     "make_dataclass_picklable",

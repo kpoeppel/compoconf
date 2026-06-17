@@ -112,6 +112,45 @@ parse_config(MyConfig, {"n": "5"})                     # -> n == 5   (coerced)
 parse_config(MyConfig, {"n": "5"}, strict_types=True)  # -> raises ValueError
 ```
 
+### Enums
+
+`enum.Enum` fields are supported. A value parses from an existing member, a member **name**, or a
+member **value**, and serializes back to its value (so configs round-trip and stay JSON/YAML-safe):
+
+```python
+from enum import Enum
+from dataclasses import dataclass
+from compoconf import ConfigInterface, parse_config, dump_config
+
+class Color(Enum):
+    RED = "red"
+    GREEN = "green"
+
+@dataclass
+class StyleConfig(ConfigInterface):
+    color: Color = Color.RED
+
+parse_config(StyleConfig, {"color": "RED"})    # by name  -> Color.RED
+parse_config(StyleConfig, {"color": "green"})  # by value -> Color.GREEN
+dump_config(StyleConfig(color=Color.GREEN))    # -> {"class_name": "", "color": "green"}
+```
+
+### JSON Schema export
+
+`to_json_schema` converts a config class (or any supported annotation) into a JSON Schema
+(draft 2020-12) document — handy for editor validation/autocomplete and external tooling. The type
+mapping mirrors `parse_config`; dataclasses are placed in `$defs` and referenced via `$ref` (so
+shared and recursive configs work), and registered configs pin their `class_name` for union
+discrimination.
+
+```python
+import json
+from compoconf import to_json_schema
+
+schema = to_json_schema(ModelConfig, title="ModelConfig")
+json.dumps(schema)   # ready for a JSON Schema validator / editor
+```
+
 ### OmegaConf Integration
 
 CompoConf optionally integrates with OmegaConf for enhanced configuration handling:
@@ -201,6 +240,7 @@ reminds you to import (or `compoconf.load(...)`) the module that defines it.
 - `parse_file(config_class, path, *, strict=True, strict_types=False, file_format=None)`: Load a JSON/YAML file and parse it into a typed config
 - `dump_config(obj)`: Convert a config (tree of dataclasses) into a pure Python structure (JSON/YAML-ready)
 - `asdict(obj)`: Convert a dataclass (including `NonStrictDataclass`, with extras flattened) to a dictionary
+- `to_json_schema(config_class, *, title=None)`: Generate a JSON Schema (draft 2020-12) for a config type
 - `load(module, *, recurse=True)`: Import a module/package to run its registrations; returns the classes registered
 - `registered(interface=None)`: Introspect the registry (names per interface, or a full mapping)
 
