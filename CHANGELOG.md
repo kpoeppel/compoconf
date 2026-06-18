@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `enum.Enum` support in parsing and serialization: enum-typed fields parse from an existing
   member, a member name, or a member value, and serialize back to their value (round-trips and
   stays JSON/YAML-safe).
+- Built-in support for common scalar stdlib types -- `pathlib.Path`, `datetime` / `date` / `time`,
+  `decimal.Decimal` and `uuid.UUID` -- across parsing, serialization (`dump_config`/`asdict` emit
+  JSON-safe strings) and `to_json_schema` (string schemas with `format` where applicable). They
+  round-trip through their string forms.
 - `compoconf.to_json_schema(config_class, *, title=None)`: generate a JSON Schema (draft 2020-12)
   for a config type. Dataclasses are emitted under `$defs` with `$ref` (handling shared/recursive
   configs), registered configs pin their `class_name`, and the mapping mirrors `parse_config`.

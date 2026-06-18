@@ -135,6 +135,29 @@ parse_config(StyleConfig, {"color": "green"})  # by value -> Color.GREEN
 dump_config(StyleConfig(color=Color.GREEN))    # -> {"class_name": "", "color": "green"}
 ```
 
+### Built-in scalar types
+
+Beyond the JSON primitives, a few common stdlib scalar types are supported and round-trip through
+strings (JSON/YAML have no native form for them): `pathlib.Path`, `datetime.datetime` / `date` /
+`time` (ISO-8601), `decimal.Decimal`, and `uuid.UUID`. They parse from their string form, serialize
+back to a string via `dump_config`/`asdict`, and map to `{"type": "string"}` (with a `format` where
+applicable) in `to_json_schema`.
+
+```python
+from datetime import datetime
+from pathlib import Path
+from dataclasses import dataclass
+from compoconf import ConfigInterface, parse_config, dump_config
+
+@dataclass
+class RunConfig(ConfigInterface):
+    out_dir: Path = Path(".")
+    started: datetime = datetime(2020, 1, 1)
+
+cfg = parse_config(RunConfig, {"out_dir": "runs/exp1", "started": "2020-01-02T03:04:05"})
+dump_config(cfg)  # {"class_name": "", "out_dir": "runs/exp1", "started": "2020-01-02T03:04:05"}
+```
+
 ### JSON Schema export
 
 `to_json_schema` converts a config class (or any supported annotation) into a JSON Schema

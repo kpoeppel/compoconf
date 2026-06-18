@@ -22,6 +22,7 @@ from types import UnionType
 from typing import Any, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
 from compoconf.compoconf import LazyConfigUnion, _LazyOr
+from compoconf.extension_types import extension_schema
 from compoconf.nonstrict_dataclass import _NonStrictDataclassBase
 
 _DRAFT = "https://json-schema.org/draft/2020-12/schema"
@@ -43,6 +44,10 @@ class _SchemaBuilder:
             return {"type": "null"}
         if typ is Any:
             return {}
+
+        ext = extension_schema(typ)
+        if ext is not None:
+            return ext
 
         origin = get_origin(typ)
         args = get_args(typ)

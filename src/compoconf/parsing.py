@@ -14,6 +14,7 @@ from typing import Sequence as tSequence
 from typing import Set, Tuple, TypeVar, get_args, get_origin, get_type_hints
 
 from compoconf.compoconf import LazyConfigUnion, _LazyOr
+from compoconf.extension_types import extension_parser
 from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict
 
 if sys.version_info >= (3, 10):
@@ -496,6 +497,15 @@ def _handle_base_types_and_literals(
     # Enums: accept a member, a member name, or a member value
     if isinstance(config_class, type) and issubclass(config_class, Enum):
         return _handle_enum(config_class, data, key_history=key_history)
+
+    # Extension scalar types (Path, datetime/date/time, Decimal, UUID): parse from their
+    # string/value form before the generic constructor path.
+    parser = extension_parser(config_class)
+    if parser is not None:
+        try:
+            return parser(data)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Could not parse {data!r} into {config_class.__name__} at key {key_history}") from exc
 
     # Handle primitive types and dataclasses
     if isinstance(config_class, type) and config_class is not Any:

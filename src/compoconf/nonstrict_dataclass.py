@@ -8,6 +8,8 @@ from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any
 
+from compoconf.extension_types import dump_extension
+
 # ``_FIELD`` / ``_FIELD_INITVAR`` are private sentinels, but they are the canonical (and only)
 # way to tell a real field from an ``InitVar`` pseudo-field, which is required to forward
 # InitVars to ``__post_init__`` the way the stdlib-generated ``__init__`` does.  Accessed via
@@ -254,6 +256,11 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
             # 2b) Enums serialize to their value (round-trips via parse-by-value)
             if isinstance(o, Enum):
                 return o.value
+
+            # 2c) Extension scalar types (Path, datetime/date/time, Decimal, UUID) -> JSON-safe form
+            handled, ext_value = dump_extension(o)
+            if handled:
+                return ext_value
 
             # 3) Mappings
             if isinstance(o, Mapping):
