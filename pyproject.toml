@@ -78,6 +78,9 @@ multi_line_output = 3
 
 [tool.pylint]
 max-line-length = 120
+# Resolve first-party imports from the source tree, so pylint works the same
+# whether it is run over the whole repo or over a single staged file.
+init-hook = 'import sys; sys.path.insert(0, "src")'
 
 # ruff
 [tool.ruff]

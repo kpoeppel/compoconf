@@ -14,15 +14,10 @@ from typing import Any, Optional
 
 import pytest  # pylint: disable=E0401
 
-from compoconf import (
-    ConfigInterface,
-    RegistrableConfigInterface,
-    register,
-    register_interface,
-)
+from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, register, register_interface
 
 
-# pylint: disable=C0115,C0116,W0212,W0621,W0613,C0415,W0612
+# pylint: disable=C0115,C0116,W0212,W0621,W0613,C0415,W0612,W0201,W0231
 @dataclass
 class LeafConfig(ConfigInterface):
     depth: int = 2
