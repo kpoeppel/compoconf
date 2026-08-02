@@ -4,7 +4,9 @@ Tests for CompoConf
 
 # pylint: disable=R0801
 
+import copy
 import json
+import pickle
 from dataclasses import dataclass, field
 from typing import Dict
 
@@ -434,35 +436,27 @@ def test_registry_str_formatting(reset_registry):
     assert "}" in registry_str
 
 
-def test_config_interface_reduce_setstate():
-    """Test ConfigInterface.__reduce__ and __setstate__ methods."""
+def test_config_interface_state_round_trip():
+    """Configs reduce to their state, and restoring it does not call __init__."""
 
     @dataclass
     class TestReduceConfig(ConfigInterface):
         value: int = 42
         name: str = "test"
 
-    # Create an instance
     config = TestReduceConfig(value=100, name="reduced")
 
-    # Call __reduce__ directly
-    reduced = config.__reduce__()
+    reduced = config.__reduce_ex__(pickle.HIGHEST_PROTOCOL)
+    state = reduced[2]
+    assert isinstance(state, dict)
+    assert state["value"] == 100
+    assert state["name"] == "reduced"
 
-    # Check the structure of the reduced tuple
-    assert len(reduced) == 3
-    assert reduced[0] is TestReduceConfig  # class
-    assert not reduced[1]  # args, == ()
-    assert isinstance(reduced[2], dict)  # state
-    assert reduced[2]["value"] == 100
-    assert reduced[2]["name"] == "reduced"
-
-    # Create a new instance and restore state
-    new_config = TestReduceConfig()
-    new_config.__setstate__(reduced[2])
-
-    # Check that state was restored correctly
-    assert new_config.value == 100
-    assert new_config.name == "reduced"
+    # Restoring must not re-run __init__, so it also works for configs whose
+    # fields have no defaults. See tests/test_pickling.py for the full matrix.
+    restored = copy.deepcopy(config)
+    assert restored == config
+    assert restored is not config
 
 
 def test_classproperty_direct_callable():

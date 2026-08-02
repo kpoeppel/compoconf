@@ -335,11 +335,9 @@ def partial_call(  # pylint: disable=R0913
                 cls.__name__,
                 dc_fields,
                 bases=(cls,),
-                namespace={
-                    "__module__": cls.__module__,
-                    "__reduce__": lambda self: (self.__class__, (), asdict(self)),
-                    "__setstate__": lambda self, state: [setattr(self, k, v) for k, v in state.items()],
-                },
+                # No __reduce__ here: the default dataclass protocol restores
+                # state without calling __init__ and keeps nested configs typed.
+                namespace={"__module__": cls.__module__},
                 module_name=cls.__module__,
             )
 
@@ -468,11 +466,9 @@ def from_annotations(  # pylint: disable=R0913
                 config_class.__name__,
                 cfg_fields,
                 bases=(config_class,),
-                namespace={
-                    "__module__": config_class.__module__,
-                    "__reduce__": lambda self: (self.__class__, (), asdict(self)),
-                    "__setstate__": lambda self, state: [setattr(self, k, v) for k, v in state.items()],
-                },
+                # No __reduce__ here: the default dataclass protocol restores
+                # state without calling __init__ and keeps nested configs typed.
+                namespace={"__module__": config_class.__module__},
                 module_name=config_class.__module__,
             )
 

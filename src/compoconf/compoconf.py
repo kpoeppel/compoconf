@@ -532,12 +532,20 @@ class ConfigInterface:
     instantiate their corresponding implementation classes. It automatically handles
     the registration of class names and provides instantiation capabilities.
 
+    Configs pickle and copy through the default dataclass protocol, which
+    restores state onto a new instance without calling ``__init__`` and recurses
+    into nested configs. Do not add a ``__reduce__`` that rebuilds via
+    ``cls(**asdict(self))``: ``__init__`` cannot be called for a config with
+    required fields, and ``asdict`` flattens nested configs into plain dicts, so
+    they would not survive a round trip. Dynamically generated config classes
+    stay picklable through ``make_dataclass_picklable``, which publishes them
+    under their module.
+
     Attributes:
         class_name (str): Name of the implementation class (auto-populated during registration)
 
     Methods:
         instantiate(interface_class, *args, **kwargs): Create an instance of the implementation class
-        __reduce__(): Support for pickling
 
     Example:
         @dataclass
@@ -550,16 +558,6 @@ class ConfigInterface:
     """
 
     class_name: str = field(init=False, default="")
-
-    def __reduce__(self):
-        """Support for pickling by storing all state."""
-        state = asdict(self)
-        return (self.__class__, (), state)
-
-    def __setstate__(self, state):
-        """Support for unpickling by restoring state."""
-        for key, value in state.items():
-            setattr(self, key, value)
 
     def instantiate(self, interface_class, *args, **kwargs):
         """
