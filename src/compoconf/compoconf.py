@@ -139,6 +139,32 @@ class LazyConfigUnion:
             other = type(None)
         return _LazyOr(self, (other,))
 
+    def __call__(self, *args, **kwargs):
+        """Never meant to be called; defined so Python 3.10 accepts this as a type.
+
+        These proxies are used as ANNOTATIONS. On 3.10, ``typing._type_check``
+        ends with::
+
+            if not callable(arg):
+                raise TypeError(f"{{msg}} Got {{arg!r:.100}}.")
+
+        so any annotation object that is not a class and not callable is
+        rejected with "Forward references must evaluate to types", which took
+        down every ``Interface.cfgtype`` annotation on 3.10. Python 3.11 dropped
+        that requirement -- its ``_type_check`` rejects only a raw tuple -- which
+        is why the same code works there and made this look version-specific
+        rather than broken.
+
+        Being callable is therefore all 3.10 asks of a type-like object.
+        Actually calling one is still a mistake: a union of config classes has
+        no single constructor, so this says so instead of guessing.
+        """
+        raise TypeError(
+            f"{self!r} is a type annotation, not a constructor. Build one of its "
+            f"member config classes directly, or use parse_config() to pick the "
+            f"right one from a mapping."
+        )
+
     def __eq__(self, other):
         if isinstance(other, LazyConfigUnion):
             return self._interface is other._interface
@@ -174,6 +200,32 @@ class _LazyOr:
         if other is None:
             other = type(None)
         return _LazyOr(self._lazy, (other,) + self._others)
+
+    def __call__(self, *args, **kwargs):
+        """Never meant to be called; defined so Python 3.10 accepts this as a type.
+
+        These proxies are used as ANNOTATIONS. On 3.10, ``typing._type_check``
+        ends with::
+
+            if not callable(arg):
+                raise TypeError(f"{{msg}} Got {{arg!r:.100}}.")
+
+        so any annotation object that is not a class and not callable is
+        rejected with "Forward references must evaluate to types", which took
+        down every ``Interface.cfgtype`` annotation on 3.10. Python 3.11 dropped
+        that requirement -- its ``_type_check`` rejects only a raw tuple -- which
+        is why the same code works there and made this look version-specific
+        rather than broken.
+
+        Being callable is therefore all 3.10 asks of a type-like object.
+        Actually calling one is still a mistake: a union of config classes has
+        no single constructor, so this says so instead of guessing.
+        """
+        raise TypeError(
+            f"{self!r} is a type annotation, not a constructor. Build one of its "
+            f"member config classes directly, or use parse_config() to pick the "
+            f"right one from a mapping."
+        )
 
     def __repr__(self):
         args = self.__args__
