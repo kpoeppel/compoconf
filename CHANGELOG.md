@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
+  are used as type annotations, and Python 3.10's `typing._type_check` ends with
+  `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
+  "Forward references must evaluate to types. Got LazyConfigUnion[...]". Any module annotating a
+  field as `SomeInterface.cfgtype` — with or without `| None` — was therefore unusable on 3.10,
+  even though the package advertises `requires-python = ">=3.10"`. Python 3.11 relaxed that check
+  to reject only a raw tuple, which is why this was invisible there. Both proxies are now callable
+  (raising a clear error if actually called, since a union of config classes has no single
+  constructor), which is all 3.10 asks of a type-like object.
+
 - Pickling and copying a config no longer goes through `__init__`. `ConfigInterface.__reduce__`
   reduced to `(cls, (), asdict(self))`, so restoring a config called `cls()` with no arguments —
   which raises `TypeError` for any config with required fields — and its `asdict` state flattened
