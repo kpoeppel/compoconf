@@ -101,6 +101,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every parse, running user code for its side effects; `default_factory is not MISSING` answers the
   question without calling anything.
 
+- A config field whose name shadows an attribute inherited from a base class is now rejected with a
+  clear `TypeError` instead of silently defaulting to that attribute. `@dataclass` turns any class
+  attribute into the default of a same-named field, so `instantiate: int` on a `ConfigInterface`
+  subclass was not required and parsed to the inherited *method*. Writing an explicit default in the
+  class body is still allowed — that is deliberate.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

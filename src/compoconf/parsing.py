@@ -12,6 +12,10 @@ The cache is keyed by ``(annotation, strict, strict_types)``; see :func:`clear_p
 generate config classes dynamically and want to release them.
 """
 
+# One parser shape per annotation shape, and they only make sense next to the dispatch that picks
+# between them, so this is over pylint's per-module line budget by design.
+# pylint: disable=too-many-lines
+
 import logging
 import sys
 from collections.abc import Mapping, Sequence
@@ -238,9 +242,62 @@ def _handle_unset_key(config_class: type, key: str) -> bool:
                     # The f.default case is already covered by the hasattr above, so a
                     # default_factory is the only remaining way this field can fill itself in.
                     return f.default_factory is MISSING
-            return True
+        # Not a dataclass (e.g. a TypedDict), or annotated without being a field: the class
+        # supplies nothing, so the data has to.
         return True
     return False
+
+
+def _shadowed_attribute_owner(cls, name, default):
+    """Return the base class whose own attribute ``default`` came from, or ``None``.
+
+    ``None`` means the default is legitimate: either some class in the MRO declares ``name`` as a
+    real dataclass field, or nothing in the MRO supplies the value at all.
+    """
+    owner = None
+    for base in cls.__mro__[1:]:
+        if name in getattr(base, "__dataclass_fields__", ()):
+            return None
+        if owner is None and name in base.__dict__ and base.__dict__[name] is default:
+            owner = base
+    return owner
+
+
+def _check_shadowed_fields(cls) -> None:
+    """Reject a field whose "default" is really an attribute inherited from a base class.
+
+    ``@dataclass`` turns any class attribute into the default of a same-named field, so annotating a
+    field with a name a base class already uses for something else -- ``instantiate``, ``_to_dict``,
+    ``config`` -- silently defaults that field to the inherited object (usually a method) instead of
+    making it required::
+
+        @dataclass
+        class MyConfig(ConfigInterface):
+            instantiate: int            # no default written, yet not required
+
+        parse_config(MyConfig, {})      # -> instantiate=<function ConfigInterface.instantiate>
+
+    Nothing downstream can tell that apart from a deliberate default, so the config parses and only
+    breaks much later, far from the declaration. This runs once per class, when its plan is compiled.
+
+    Raises:
+        TypeError: If a field's default is an attribute inherited from a base class.
+    """
+    dc_fields = getattr(cls, "__dataclass_fields__", None)
+    if not dc_fields:
+        return
+    for name, f in dc_fields.items():
+        # A default written in this class's own body is deliberate, whatever it shadows.
+        if f.default is MISSING or name in cls.__dict__:
+            continue
+        owner = _shadowed_attribute_owner(cls, name, f.default)
+        if owner is not None:
+            raise TypeError(
+                f"Field {name!r} of {cls.__name__} shadows the inherited attribute "
+                f"{owner.__name__}.{name}, so the dataclass machinery made that attribute "
+                f"({f.default!r}) its default value instead of leaving the field required. "
+                f"Rename the field, or give it an explicit default if the shadowing is intended."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +430,7 @@ def _resolve_by_class_name(entry, class_name, strict, strict_types):
 
 def _make_dataclass_parser(cls, strict: bool, strict_types: bool):  # noqa: C901
     """Compile a parser for a dataclass (or ``dict`` subclass such as a ``TypedDict``)."""
+    _check_shadowed_fields(cls)
     accepts_none = _accepts_none(cls)
     annotations = _get_all_annotations(cls)
     # Keys the data is allowed to contain: every annotated field, plus the implicit discriminator.

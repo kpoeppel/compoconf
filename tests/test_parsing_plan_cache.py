@@ -276,6 +276,70 @@ def test_default_factory_is_not_invoked_to_test_for_a_default():
     assert len(calls) == 5
 
 
+def test_annotation_on_a_non_dataclass_base_counts_as_a_required_key():
+    """An annotation-only attribute on a plain mixin is seen by get_type_hints but is not a field.
+
+    Long-standing behaviour, pinned rather than endorsed: the class supplies no value for it, so it
+    is reported as a required key -- and supplying it then fails in the constructor, because it is
+    not an init parameter. Such a config simply cannot be parsed either way.
+    """
+
+    class Mixin:
+        hint_only: int  # annotated, never assigned, and not a dataclass field
+
+    @dataclass
+    class WithMixin(Mixin):
+        a: int = 1
+
+    with pytest.raises(ValueError, match="hint_only"):
+        parse_config(WithMixin, {"a": 1})
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        parse_config(WithMixin, {"a": 1, "hint_only": 2})
+
+
+def test_field_shadowing_an_inherited_attribute_is_rejected():
+    """A field named after an inherited method silently defaults to that method; reject it."""
+
+    @dataclass
+    class ShadowsMethod(ConfigInterface):
+        instantiate: int  # no default written, but ConfigInterface.instantiate exists
+
+    with pytest.raises(TypeError, match="shadows the inherited attribute"):
+        parse_config(ShadowsMethod, {})
+
+
+def test_field_shadowing_with_an_explicit_default_is_allowed():
+    """Writing a default in the class body is deliberate, whatever name it shadows."""
+
+    @dataclass
+    class Deliberate(ConfigInterface):
+        instantiate: int = 5
+
+    assert parse_config(Deliberate, {}).instantiate == 5
+    assert parse_config(Deliberate, {"instantiate": 7}).instantiate == 7
+
+
+def test_inherited_dataclass_fields_are_not_mistaken_for_shadowing():
+    """``class_name`` and ordinary inherited fields have real defaults, not shadowed ones."""
+
+    @dataclass
+    class Base:
+        a: int = 1
+        b: list = field(default_factory=list)
+
+    @dataclass
+    class Derived(Base):
+        c: int = 3
+
+    assert parse_config(Derived, {"a": 9}) == Derived(9, [], 3)
+
+    @dataclass
+    class Registered(ConfigInterface):
+        v: int = 1
+
+    assert parse_config(Registered, {"v": 2}).class_name == ""
+
+
 def test_required_fields_are_still_detected_around_defaults():
     @dataclass
     class Mixed:
