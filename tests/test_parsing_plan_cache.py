@@ -257,6 +257,37 @@ def test_strict_flag_propagates_and_does_not_leak_between_plans():
         parse_config(Outer, {"inner": {"a": 1, "junk": 2}})
 
 
+def test_default_factory_is_not_invoked_to_test_for_a_default():
+    """Deciding whether a field is required must not run the user's factory."""
+    calls = []
+
+    def factory():
+        calls.append(1)
+        return []
+
+    @dataclass
+    class WithFactory:
+        present: int = 0
+        absent: list = field(default_factory=factory)
+
+    for _ in range(5):
+        assert parse_config(WithFactory, {"present": 1}).absent == []
+    # exactly one call per parse, all of them from the dataclass __init__ filling the field in
+    assert len(calls) == 5
+
+
+def test_required_fields_are_still_detected_around_defaults():
+    @dataclass
+    class Mixed:
+        needed: int
+        with_factory: list = field(default_factory=list)
+        with_default: int = 3
+
+    assert parse_config(Mixed, {"needed": 1}) == Mixed(1, [], 3)
+    with pytest.raises(ValueError, match="needed"):
+        parse_config(Mixed, {})
+
+
 # ---------------------------------------------------------------------- None handling per shape
 
 

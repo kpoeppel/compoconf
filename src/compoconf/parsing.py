@@ -222,20 +222,24 @@ def _none_result(accepts_none: bool, annotation, key_history: str):
 
 
 def _handle_unset_key(config_class: type, key: str) -> bool:
+    """Whether ``key`` must be present in the data, i.e. the class supplies no value for it.
+
+    Args:
+        config_class: The target configuration class.
+        key: Name of an annotated field.
+
+    Returns:
+        ``True`` when the field has no default of any kind and the data must therefore provide it.
+    """
     if not hasattr(config_class, key):
         if is_dataclass(config_class):
-            default = MISSING
             for f in fields(config_class):
                 if f.name == key:
-                    # the f.default case is already part of haattr
-                    if f.default_factory is not MISSING:
-                        default = f.default_factory()
-                    else:
-                        default = MISSING
-            if default is MISSING:
-                return True
-        else:
+                    # The f.default case is already covered by the hasattr above, so a
+                    # default_factory is the only remaining way this field can fill itself in.
+                    return f.default_factory is MISSING
             return True
+        return True
     return False
 
 

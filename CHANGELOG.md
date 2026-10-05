@@ -96,6 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implementations, while a config class merely *inheriting* a name it was never registered under
   (what the `util` decorators produce) stays at `INFO`.
 
+- `parse_config` no longer calls a field's `default_factory` just to find out whether the field has
+  one. The factory's result was built and discarded for every absent factory-defaulted field on
+  every parse, running user code for its side effects; `default_factory is not MISSING` answers the
+  question without calling anything.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
