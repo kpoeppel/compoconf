@@ -82,6 +82,64 @@ def test_union_parse_error_message_is_rendered_lazily():
     assert str(exc_info.value) == str(exc_info.value)
 
 
+def test_union_error_ranks_the_deepest_failure_first():
+    """The member that matched furthest into the data is the one the user most likely meant."""
+
+    @dataclass
+    class Leaf:
+        x: int = 0
+
+    @dataclass
+    class Deep:
+        kind: str = "deep"
+        leaves: list[Leaf] = field(default_factory=list)
+
+    @dataclass
+    class Shallow:
+        other: int = 0
+
+    # Deep is declared second and produces the *shorter* message, so neither declaration order
+    # nor message length would put it first; only its failure depth does.
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Union[Shallow, Deep], {"kind": "deep", "leaves": [{"x": "nope"}]})
+    tried = str(exc_info.value).split("Tried:")[1]
+    assert tried.index("Deep") < tried.index("Shallow")
+    assert "leaves.0.x" in tried
+
+
+def test_union_error_falls_back_to_shortest_message_at_equal_depth():
+    @dataclass
+    class SmallConfig:
+        a: int
+
+    @dataclass
+    class BigConfig:
+        field_one: int
+        field_two: str
+        field_three: float
+
+    # both are rejected on their own key set, so both fail at depth 0
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Union[BigConfig, SmallConfig], {"wrong": True})
+    tried = str(exc_info.value).split("Tried:")[1]
+    assert tried.index("SmallConfig") < tried.index("BigConfig")
+
+
+@pytest.mark.parametrize(
+    ("message", "depth"),
+    [
+        ("Could not convert x to <class 'int'> at key leaves.0.x", 3),
+        ("Undefined keys {'a'} and unset keys set() in data {} at key  for <class 'C'>: ['x']", 0),
+        ("Expected int, got str ('z') at key  (strict_types=True disables silent coercion)", 0),
+        ("Expected int, got str ('z') at key foo (strict_types=True disables silent coercion)", 1),
+        ("Could not parse into any of (...) at key: choice\nTried:\n  A: bad at key choice.a.b", 3),
+        ("something a user's __post_init__ raised", 0),
+    ],
+)
+def test_failure_depth_reads_the_key_path_out_of_a_message(message, depth):
+    assert parsing_module._failure_depth(ValueError(message)) == depth
+
+
 # ---------------------------------------------------------------------- cache invalidation
 
 

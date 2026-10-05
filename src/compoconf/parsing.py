@@ -17,6 +17,7 @@ generate config classes dynamically and want to release them.
 # pylint: disable=too-many-lines
 
 import logging
+import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, fields, is_dataclass
@@ -129,17 +130,37 @@ class _LazyMessage:
         return item in self.__str__()
 
 
+# Every error raised here names the dotted path it failed at, as ``at key <path>`` (``at key:
+# <path>`` for a union's own error).  ``_failure_depth`` reads those back out.
+_AT_KEY_RE = re.compile(r" at key:? (\S*)")
+
+
+def _failure_depth(error) -> int:
+    """How deep into the data a failed union member got before giving up.
+
+    All members of a union are tried against the same value at the same key, so the one that
+    reports the deepest key path is the one that matched furthest -- which is almost always the one
+    the user meant. For a nested failure the deepest path mentioned anywhere in the message counts,
+    so a member that failed three levels down outranks one that was rejected on its own key set.
+
+    An error that does not carry a key path (a ``__post_init__`` raising on its own, say) scores 0
+    and is ordered by message length instead.
+    """
+    return max((path.count(".") + 1 for path in _AT_KEY_RE.findall(str(error)) if path), default=0)
+
+
 def _union_error(union_types, errors, data, key_history):
     """Build the (lazily rendered) ``ValueError`` for a union where no member accepted the data."""
 
     def render():
-        # Sort: class_name match first (the option the user most likely intended),
-        # then by shortest error message (proxy for "closest match").
+        # Sort: class_name match first (the member the user most likely intended), then the member
+        # that got deepest into the data, then the shortest message as a stable tie-break.
         data_class_name = data.get("class_name") if isinstance(data, dict) else None
         ordered = sorted(
             errors,
             key=lambda opt_err: (
                 not (hasattr(opt_err[0], "class_name") and opt_err[0].class_name == data_class_name),
+                -_failure_depth(opt_err[1]),
                 len(str(opt_err[1])),
             ),
         )

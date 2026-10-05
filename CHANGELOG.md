@@ -107,6 +107,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subclass was not required and parsed to the inherited *method*. Writing an explicit default in the
   class body is still allowed — that is deliberate.
 
+- Union parse errors now list the member that got *deepest* into the data first, instead of the one
+  with the shortest message. Members were ranked by message length as a proxy for "closest match",
+  which is unrelated to how well a member fit: a member failing three levels down can produce a
+  short message while one rejected on its own key set produces a long one (it embeds the whole data
+  blob). The `class_name` match still wins outright, and message length remains the tie-break
+  between members that failed at the same depth.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
