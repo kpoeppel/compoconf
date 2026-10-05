@@ -37,8 +37,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`int`/`float`/`str`) are validated rather than coerced, so mismatched/lossy values (e.g. `"5"`
   or `5.9` for an `int` field) raise instead of being silently converted. The only widening
   allowed is `int` → `float`. Defaults to off, preserving the existing lenient behavior.
+- `compoconf.clear_parse_cache()`: drop the compiled parse plans and the resolved-annotation cache.
+  Only needed by programs that generate config classes dynamically in a loop and want to release
+  them; parsing stays correct either way, since the next call simply recompiles.
+
+### Performance
+
+- `parse_config` now *compiles* each type annotation into a cached parser the first time it sees
+  it, instead of re-deriving the whole decision tree for every value. Resolving type hints
+  (`typing.get_type_hints`), walking union members, resolving `cfgtype` unions against the registry
+  and looking up extension types used to happen once per *value* parsed; they now happen once per
+  *annotation*. Measured on a 24-block nested config (`cfgtype` unions, lists, dicts, tuples,
+  enums, scalars): **3.8 ms → 0.37 ms per call (~10x)**.
+  - Unions of registered config classes are dispatched directly on `class_name` rather than by
+    trying each member in declaration order: a 24-element list over a 12-member union whose match
+    is the last member went **1.9 ms → 0.08 ms (~24x)**.
+  - A dataclass now validates its key set *before* parsing field values. Since that check never
+    depended on the values, this lets a union reject a member that cannot fit without first parsing
+    its whole subtree — which turns nested-union parsing from exponential in nesting depth into
+    linear. A depth-8 chain of nested two-member unions went **23.5 ms → 0.10 ms (~240x)**, and
+    deeper configs that previously took seconds are now flat.
+  - Parse error messages (which embed the offending data) are rendered only when something reads
+    them, so the errors a union discards while probing its members cost nothing to produce.
+  - Cached annotation resolution is invalidated by a registry-change counter, so a `cfgtype` union
+    still picks up implementations registered after the first parse.
 
 ### Changed
+
+- When data has both an unknown key and an invalid field value, `parse_config` now reports the
+  unknown/missing key rather than the bad value. Previously field values were parsed first, so the
+  value error surfaced and the structural problem stayed hidden until it was fixed. Both are still
+  `ValueError`; only which one is reported first changed.
 
 - `NonStrictDataclass._extras` is now an `init=True` field so `dataclasses.replace` round-trips
   extra attributes. The custom `__init__` still fully owns `_extras` (excluded from positional
@@ -70,6 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dataclasses.replace` on a `NonStrictDataclass` silently dropped all extra (undeclared)
   attributes. Extras are now preserved, and an explicitly replaced extra is merged over the
   round-tripped ones.
+- A `str` or `list` field value that merely *contained* `"class_name"` (as a substring or an
+  element) was mistaken for a discriminated config and crashed with an unhelpful
+  `TypeError: string indices must be integers`. The `class_name` discriminator is now only read
+  from mapping values.
 
 ### Documentation
 

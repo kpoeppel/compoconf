@@ -266,6 +266,7 @@ reminds you to import (or `compoconf.load(...)`) the module that defines it.
 - `to_json_schema(config_class, *, title=None)`: Generate a JSON Schema (draft 2020-12) for a config type
 - `load(module, *, recurse=True)`: Import a module/package to run its registrations; returns the classes registered
 - `registered(interface=None)`: Introspect the registry (names per interface, or a full mapping)
+- `clear_parse_cache()`: Drop the compiled parse plans (see [Parsing Module](#parsing-module))
 
 ## Enhanced Functionality
 
@@ -276,6 +277,19 @@ The parsing module has been enhanced to provide more robust and flexible configu
 -   Improved handling of nested configurations and unions.
 -   Enhanced type validation and error reporting.
 -   Support for parsing configurations from various data sources (e.g., JSON, YAML).
+
+`parse_config` compiles each type annotation into a cached parser the first time it encounters it,
+so resolving type hints, walking union members and resolving `cfgtype` unions against the registry
+happen once per annotation rather than once per value. Repeatedly parsing a large config is roughly
+an order of magnitude cheaper as a result, and deeply nested unions no longer blow up: a union of
+registered configs is dispatched straight to the member named by `class_name`, and a config whose
+key set cannot fit is rejected before its subtree is parsed.
+
+The cache keeps a reference to every annotation it has seen. That is what you want for ordinary
+code, where config classes are defined once at import time. If you *generate* config classes
+dynamically in a long-running loop, call `clear_parse_cache()` to release them — parsing stays
+correct either way, since the next call simply recompiles. Configs registered after a first parse
+are picked up automatically; no cache clearing is needed for that.
 
 ### Non-Strict Dataclasses
 

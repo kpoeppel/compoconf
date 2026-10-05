@@ -48,6 +48,85 @@ from compoconf.nonstrict_dataclass import asdict
 
 LOGGER = logging.getLogger(__name__)
 
+# Bumped on every registry mutation.  Parsing caches data derived from the registry (most
+# importantly the resolved members of a ``cfgtype`` union) and compares against this counter to
+# notice when a late ``@register`` -- or a test fixture resetting the registry -- invalidates it.
+_REGISTRY_EPOCH = [0]
+
+
+def registry_epoch() -> int:
+    """Return a counter that changes whenever the registry contents change."""
+    return _REGISTRY_EPOCH[0]
+
+
+class _EpochDict(dict):
+    """A ``dict`` that bumps :func:`registry_epoch` whenever it is mutated.
+
+    Tracking mutation on the container rather than in the registry methods keeps the counter
+    honest even where the registry is manipulated directly (e.g. the test fixture that resets
+    it by popping from ``Registry._registries``).
+    """
+
+    def __setitem__(self, key, value):
+        _REGISTRY_EPOCH[0] += 1
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key):
+        _REGISTRY_EPOCH[0] += 1
+        super().__delitem__(key)
+
+    def pop(self, *args):
+        _REGISTRY_EPOCH[0] += 1
+        return super().pop(*args)
+
+    def popitem(self):
+        _REGISTRY_EPOCH[0] += 1
+        return super().popitem()
+
+    def clear(self):
+        _REGISTRY_EPOCH[0] += 1
+        super().clear()
+
+    def update(self, *args, **kwargs):
+        _REGISTRY_EPOCH[0] += 1
+        super().update(*args, **kwargs)
+
+    def setdefault(self, key, default=None):
+        _REGISTRY_EPOCH[0] += 1
+        return super().setdefault(key, default)
+
+
+_TYPE_HINTS_CACHE: dict = {}
+
+
+def cached_type_hints(obj):
+    """:func:`typing.get_type_hints` with a per-object cache.
+
+    Resolving annotations re-evaluates every annotation expression and is by far the most
+    expensive single step in parsing, yet a class's annotations never change once it is defined.
+    Unresolvable annotations are not cached, so a forward reference that only becomes resolvable
+    later still works on a subsequent call.
+
+    Args:
+        obj: Class, function or module to resolve annotations for.
+
+    Returns:
+        Mapping from name to resolved type annotation.
+    """
+    try:
+        hints = _TYPE_HINTS_CACHE.get(obj)
+    except TypeError:  # unhashable annotation holder -- resolve without caching
+        return get_type_hints(obj)
+    if hints is None:
+        hints = get_type_hints(obj)
+        _TYPE_HINTS_CACHE[obj] = hints
+    return hints
+
+
+def clear_type_hints_cache() -> None:
+    """Drop every entry from the :func:`cached_type_hints` cache."""
+    _TYPE_HINTS_CACHE.clear()
+
 
 class classproperty(property):
     """
@@ -241,7 +320,7 @@ def _get_config_class(cls: Type) -> Optional[Type]:
     if hasattr(cls, "config_class") and hasattr(cls.config_class, "class_name"):
         config_class = cls.config_class
     if config_class is None and hasattr(cls, "config"):
-        type_hints = get_type_hints(cls)
+        type_hints = cached_type_hints(cls)
         if "config" in type_hints and type_hints["config"] is not Any and type_hints["config"] is not type(None):
             config_class = type_hints["config"]
     return config_class
@@ -320,8 +399,8 @@ class _RegistrySingleton:
 
     def __init__(self):
         LOGGER.debug("Initializing new Registry instance")
-        self._registries = {}
-        self._registry_classes = {}
+        self._registries = _EpochDict()
+        self._registry_classes = _EpochDict()
 
     @staticmethod
     def _unique_name(other_cls):
@@ -339,7 +418,7 @@ class _RegistrySingleton:
                 f"Tried to create registry for {self._unique_name(cls)} that doesn't inherit from "
                 "RegistrableConfigInterface"
             )
-        self._registries[self._unique_name(cls)] = {}
+        self._registries[self._unique_name(cls)] = _EpochDict()
         self._registry_classes[self._unique_name(cls)] = cls
 
     def _reregistration_warnings(self, config_class, cls, cls_name, parent):

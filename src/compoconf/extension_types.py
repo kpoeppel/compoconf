@@ -67,12 +67,15 @@ _EXTENSION_TYPES: list = [
 ]
 
 
+_PARSERS_BY_TYPE: dict = {ann_type: parse_fn for ann_type, _i, parse_fn, _d, _s in _EXTENSION_TYPES}
+
+
 def extension_parser(config_class) -> Optional[Callable[[Any], Any]]:
     """Return the parse function for ``config_class`` if it is a supported extension type."""
-    for ann_type, _inst, parse_fn, _dump, _schema in _EXTENSION_TYPES:
-        if config_class is ann_type:
-            return parse_fn
-    return None
+    try:
+        return _PARSERS_BY_TYPE.get(config_class)
+    except TypeError:  # unhashable annotation (e.g. a lazy union proxy) -- never an extension type
+        return None
 
 
 def dump_extension(obj: Any):
