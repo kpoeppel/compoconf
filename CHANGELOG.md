@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only needed by programs that generate config classes dynamically in a loop and want to release
   them; parsing stays correct either way, since the next call simply recompiles.
 
+- `py.typed` marker: the package now declares itself typed, so downstream `mypy`/`pyright` users get
+  real signatures instead of *"module is installed, but missing library stubs or py.typed marker"* on
+  every import — which was an odd gap for a library whose whole premise is type-driven config
+  parsing.
+
 ### Performance
 
 - `parse_config` now *compiles* each type annotation into a cached parser the first time it sees
