@@ -235,8 +235,10 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
         if oid in seen:
             # Match stdlib behavior: raise on cycles
             raise TypeError("asdict() should be called on acyclic structures")
-        # Only track container-like or dataclass objects to avoid overhead
-        track = is_dataclass(o) or isinstance(o, (Mapping, Sequence)) and not isinstance(o, (str, bytes, bytearray))
+        # Only track container-like or dataclass objects to avoid overhead.  The str/bytes
+        # exclusion applies to the container test alone, not to the dataclass one -- parenthesized
+        # because `or`/`and` precedence makes that easy to misread.
+        track = is_dataclass(o) or (isinstance(o, (Mapping, Sequence)) and not isinstance(o, (str, bytes, bytearray)))
         if track:
             seen.add(oid)
 
