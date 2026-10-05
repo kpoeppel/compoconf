@@ -129,6 +129,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dump_config([Path("/a")])` the live `Path` — neither JSON- nor YAML-serializable. A value now
   dumps to the same thing whether it sits inside a config or is passed in directly.
 
+- `set` and `frozenset` values now dump to a sorted list, so a config with a set field can be
+  written to JSON/YAML. They previously came out of `asdict`/`dump_config` as live `set`/`frozenset`
+  objects, which `json.dumps` and `yaml.safe_dump` both reject — the parse side already accepted an
+  array and `to_json_schema` already declared one, so only the dump disagreed. Elements are sorted
+  *after* conversion, since it is the written form that has to be stable: `set` iteration order is
+  hash-randomized for strings, so an unsorted dump would differ from run to run and defeat diffing
+  and checksums. Elements that are not mutually comparable fall back to a `repr` ordering, which is
+  arbitrary but still deterministic. The annotation is what turns the array back into a set, so
+  nothing is lost in the round trip.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

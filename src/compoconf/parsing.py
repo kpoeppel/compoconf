@@ -20,6 +20,7 @@ import logging
 import re
 import sys
 from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import MISSING, fields, is_dataclass
 from enum import Enum
 from inspect import isclass
@@ -29,7 +30,7 @@ from typing import Set, Tuple, TypeVar, get_args, get_origin
 
 from compoconf.compoconf import _REGISTRY_EPOCH, LazyConfigUnion, _LazyOr, cached_type_hints, clear_type_hints_cache
 from compoconf.extension_types import dump_extension, extension_parser
-from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict
+from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict, sorted_for_dump
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -1034,7 +1035,7 @@ def _parse_compositional_types(origin, args, data, key_history: str = "", strict
     return parser(data, key_history)
 
 
-def dump_config(a: Any) -> Any:
+def dump_config(a: Any) -> Any:  # pylint: disable=too-many-return-statements
     """
     Converts a dataclass or dict/list of dataclasses into a PyTree, i.e.
     a nested structure of core python types.
@@ -1042,8 +1043,8 @@ def dump_config(a: Any) -> Any:
     Conversions follow :func:`asdict` exactly, so a value dumps to the same thing whether it sits
     inside a config or is passed here directly: enums become their value, the extension scalars
     (``Path``, ``datetime``/``date``/``time``, ``Decimal``, ``UUID``) become their JSON-safe form,
-    and mappings, lists and tuples are recursed into (tuples stay tuples). Strings and bytes are
-    left alone rather than treated as sequences of characters.
+    mappings, lists and tuples are recursed into (tuples stay tuples), and sets become sorted lists.
+    Strings and bytes are left alone rather than treated as sequences of characters.
 
     Args:
         a: Any dataclass or structure of dataclasses
@@ -1063,4 +1064,6 @@ def dump_config(a: Any) -> Any:
     if isinstance(a, (list, tuple)) or (isinstance(a, Sequence) and not isinstance(a, (str, bytes, bytearray))):
         dumped = (dump_config(item) for item in a)
         return tuple(dumped) if isinstance(a, tuple) else list(dumped)
+    if isinstance(a, AbstractSet):
+        return sorted_for_dump([dump_config(item) for item in a])
     return a

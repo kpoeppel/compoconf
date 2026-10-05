@@ -3,11 +3,19 @@ Parsing Tests for CompoConf.
 """
 
 import json
+import os
+import pathlib
+import subprocess
+import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Dict, List
 
 from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, register, register_interface
+from compoconf.nonstrict_dataclass import asdict
 from compoconf.parsing import dump_config, parse_config
+
+SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
 
@@ -241,6 +249,70 @@ def test_dump_config_round_trips_a_list_of_configs(reset_registry):
 
     points = [Point(1, 2), Point(3, 4)]
     assert parse_config(List[Point], dump_config(points)) == points
+
+
+def test_dump_config_turns_sets_into_sorted_lists(reset_registry):
+    """Sets have no JSON form of their own; the annotation is what makes them sets again."""
+
+    @dataclass
+    class WithSets:
+        tags: set[str] = field(default_factory=set)
+        ids: frozenset[int] = field(default_factory=frozenset)
+
+    config = WithSets(tags={"c", "a", "b"}, ids=frozenset({3, 1, 2}))
+    assert dump_config(config) == {"tags": ["a", "b", "c"], "ids": [1, 2, 3]}
+    # asdict has to agree, or a value's dumped form depends on how it was reached
+    assert asdict(config) == dump_config(config)
+    # and bare sets, which dump_config also accepts
+    assert dump_config({3, 1, 2}) == [1, 2, 3]
+    assert dump_config(frozenset({"b", "a"})) == ["a", "b"]
+    assert dump_config({"k": {2, 1}}) == {"k": [1, 2]}
+    assert json.dumps(dump_config(config))
+
+
+def test_set_dump_sorts_elements_after_converting_them(reset_registry):
+    """It is the written form that has to be ordered, not the in-memory one."""
+
+    class Grade(Enum):
+        HIGH = "a"
+        LOW = "z"
+        MID = "m"
+
+    @dataclass
+    class WithEnums:
+        grades: set[Grade] = field(default_factory=set)
+
+    dumped = dump_config(WithEnums(grades={Grade.LOW, Grade.HIGH, Grade.MID}))
+    assert dumped == {"grades": ["a", "m", "z"]}  # sorted by value, not by member name
+
+
+def test_set_dump_of_unorderable_elements_is_still_deterministic():
+    """Mutually incomparable values cannot be sorted naturally, but must still have a fixed order."""
+    mixed = dump_config({1, "a", 2.5})
+    assert sorted(mixed, key=repr) == mixed
+    assert set(mixed) == {1, "a", 2.5}
+    # repeating the dump gives the same order
+    assert dump_config({1, "a", 2.5}) == mixed
+
+
+def test_set_dump_is_identical_under_different_hash_seeds(tmp_path):
+    """The reason for sorting: str hashing is randomized, so an unsorted dump would differ per run."""
+    script = tmp_path / "dump_once.py"
+    script.write_text(
+        "import json\n"
+        "from compoconf import dump_config\n"
+        "print(json.dumps(dump_config({'alpha', 'beta', 'gamma', 'delta', 'epsilon'})))\n",
+        encoding="utf-8",
+    )
+    outputs = set()
+    for seed in ("0", "1", "2", "3"):
+        env = {**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": str(SRC)}
+        result = subprocess.run(
+            [sys.executable, str(script)], capture_output=True, text=True, check=True, env=env, cwd=str(tmp_path)
+        )
+        outputs.add(result.stdout.strip())
+    assert len(outputs) == 1, f"dump differs across hash seeds: {outputs}"
+    assert outputs.pop() == '["alpha", "beta", "delta", "epsilon", "gamma"]'
 
 
 # pylint: enable=C0115

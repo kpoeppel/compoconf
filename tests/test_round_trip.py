@@ -64,20 +64,13 @@ SHAPES = [
     ("typing-Tuple", Tuple[int], [1]),
     ("tuple-of-dataclass", tuple[Leaf, Leaf], [{"a": 1}, {"a": 2}]),
     ("union", Union[int, str], "s"),
-    ("nested-containers", dict[str, list[Leaf]], {"k": [{"a": 1}]}),
-    ("any", Any, {"free": [1, "two"]}),
-]
-
-# Sets dump as live set/frozenset objects, which neither json nor yaml can represent, so the cycle
-# cannot complete. parse_config already accepts an array for a set annotation and to_json_schema
-# already declares one, so only the dump side disagrees. Marked strict so that fixing the dump turns
-# these green and flags the markers for removal.
-SET_SHAPES = [
     ("set", set[int], [1, 2]),
     ("typing-Set", Set[int], [1, 2]),
     ("frozenset", frozenset[str], ["a", "b"]),
     ("typing-FrozenSet", FrozenSet[str], ["a"]),
-    ("set-in-dataclass", "set-field", None),
+    ("set-of-enum", set[Color], ["red", "blue"]),
+    ("nested-containers", dict[str, list[Leaf]], {"k": [{"a": 1}]}),
+    ("any", Any, {"free": [1, "two"]}),
 ]
 
 
@@ -108,23 +101,17 @@ def test_round_trip(label, annotation, data):
     _assert_round_trips(annotation, data)
 
 
-@pytest.mark.parametrize(("label", "annotation", "data"), SET_SHAPES, ids=[s[0] for s in SET_SHAPES])
-@pytest.mark.xfail(strict=True, reason="sets dump as live set objects; json/yaml cannot represent them")
-def test_round_trip_of_sets(label, annotation, data):
-    if label == "set-in-dataclass":
+def test_round_trip_of_a_set_field():
+    @dataclass
+    class WithSets:
+        tags: set[str] = field(default_factory=set)
+        ids: frozenset[int] = field(default_factory=frozenset)
 
-        @dataclass
-        class WithSet:
-            tags: set[str] = field(default_factory=set)
-
-        annotation, data = WithSet, {"tags": ["a", "b"]}
-    _assert_round_trips(annotation, data)
-
-
-def test_sets_parse_from_an_array_even_though_they_do_not_dump_to_one():
-    """The parse side of the contract already holds; this is the half that works."""
-    assert parse_config(set[str], ["a", "b"]) == {"a", "b"}
-    assert parse_config(frozenset[int], [1, 2]) == frozenset({1, 2})
+    _assert_round_trips(WithSets, {"tags": ["b", "a"], "ids": [2, 1]})
+    parsed = parse_config(WithSets, {"tags": ["b", "a"], "ids": [2, 1]})
+    # the annotation decides which kind comes back out of the array
+    assert isinstance(parsed.tags, set) and isinstance(parsed.ids, frozenset)
+    assert isinstance(parse_config(WithSets, dump_config(parsed)).ids, frozenset)
 
 
 # ---------------------------------------------------------------------- whole-config round trips

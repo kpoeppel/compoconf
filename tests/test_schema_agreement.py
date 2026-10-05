@@ -93,23 +93,18 @@ def test_anything_the_schema_accepts_parse_config_accepts(label, annotation, acc
         parse_config(annotation, value, strict_types=True)
 
 
-# Two shapes do not survive validation of their own dump, for the same underlying reason: the dumped
-# value is a Python container that JSON Schema does not consider an array.
-#
-#   * sets   -- dump as live set/frozenset objects, which json/yaml cannot represent at all
-#   * tuples -- dump as Python tuples; json.dumps and yaml.safe_dump both write an array, but the
-#               in-memory value is not one, so a validator rejects it and the dump is not a fixed
-#               point through a file (a tuple comes back as a list).
-#
-# parse_config accepts an array for both annotations and to_json_schema declares an array for both,
-# so only the dump side disagrees. Marked strict so that fixing the dump turns these green.
-_DUMP_GAPS = {"set", "typing-Set", "tuple-fixed", "tuple-variadic", "typing-Tuple"}
+# Tuples do not survive validation of their own dump: the schema says "array" and dump_config emits a
+# Python tuple, which JSON Schema does not consider one. json.dumps and yaml.safe_dump both write an
+# array, so it serializes, but the dump is not a fixed point -- read the file back and the tuple is a
+# list. parse_config accepts an array for a tuple annotation and to_json_schema declares one, so only
+# the dump side disagrees. Marked strict so that fixing the dump turns these green.
+_DUMP_GAPS = {"tuple-fixed", "tuple-variadic", "typing-Tuple"}
 _DUMP_CASES = [
     pytest.param(
         *case,
         id=case[0],
         marks=(
-            [pytest.mark.xfail(strict=True, reason="dumped set/tuple is not a JSON array")]
+            [pytest.mark.xfail(strict=True, reason="a dumped tuple is not a JSON array")]
             if case[0] in _DUMP_GAPS
             else []
         ),

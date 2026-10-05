@@ -4,6 +4,7 @@ This submodule introduces an adapted dataclass interface that enables a runtime 
 
 import dataclasses
 from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any
@@ -195,6 +196,27 @@ class FrozenNonStrictDataclass(_NonStrictDataclassBase):
     _non_strict: bool = True
 
 
+def sorted_for_dump(values: list) -> list:
+    """Order the dumped elements of a set so that the output is stable across runs.
+
+    A set has no order of its own, and ``set`` iteration order is hash-randomized for strings, so an
+    unsorted dump would differ from run to run -- which breaks diffing, review and checksums of
+    generated config files. Elements are sorted *after* conversion, since it is the written form that
+    has to be stable. Values that are not mutually comparable (a set of dataclasses dumps to dicts,
+    a ``set[int | str]`` to a mix) fall back to ordering by ``repr``: arbitrary, but deterministic.
+
+    Args:
+        values: Already-converted elements of a set or frozenset.
+
+    Returns:
+        The same elements as a list, in a deterministic order.
+    """
+    try:
+        return sorted(values)
+    except TypeError:
+        return sorted(values, key=repr)
+
+
 def _has_to_dict(o: Any) -> bool:
     """
     Checks for the _to_dict method in the dataclass
@@ -230,7 +252,8 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
     """
     seen = set()  # recursion guard by id()
 
-    def convert(o, use_to_dict: bool = True):  # pylint: disable=too-many-return-statements
+    # One branch per kind of value that needs converting; the chain is the function's whole point.
+    def convert(o, use_to_dict: bool = True):  # pylint: disable=too-many-return-statements,too-many-branches
         oid = id(o)
         if oid in seen:
             # Match stdlib behavior: raise on cycles
@@ -278,6 +301,11 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
                 if isinstance(o, tuple):
                     return tuple((convert(v) for v in o))
                 return [convert(v) for v in o]
+
+            # 4b) Sets -- no JSON/YAML representation of their own, so they become arrays.  The
+            # annotation is what turns the array back into a set, so nothing is lost.
+            if isinstance(o, AbstractSet):
+                return sorted_for_dump([convert(v) for v in o])
 
             # 5) Base case: leave as-is
             return o
