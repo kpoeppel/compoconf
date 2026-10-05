@@ -114,6 +114,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blob). The `class_name` match still wins outright, and message length remains the tie-break
   between members that failed at the same depth.
 
+- A misconfigured `classproperty` now raises `TypeError` instead of silently evaluating to `None`.
+  Its `__get__` fell through to `return None` when `fget` was neither callable nor a wrapper around
+  one, so the mistake surfaced as a `None` somewhere else entirely.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

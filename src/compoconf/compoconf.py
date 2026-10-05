@@ -134,12 +134,17 @@ class classproperty(property):
     """
 
     def __get__(self, instance, owner):
-        # Call the classmethod and return its value
+        # Call the classmethod and return its value.  A ``classmethod`` object is not itself
+        # callable, which is why the ``__wrapped__`` branch exists and is the one ``cfgtype`` takes.
         if hasattr(self.fget, "__call__"):
             return self.fget(owner)
         if hasattr(self.fget, "__wrapped__"):
             return self.fget.__wrapped__(owner)
-        return None
+        raise TypeError(
+            f"classproperty on {owner.__name__} was given {self.fget!r}, which is neither callable "
+            "nor a wrapper around a callable. Decorate a classmethod: "
+            "@classproperty followed by @classmethod."
+        )
 
 
 class LazyConfigUnion:

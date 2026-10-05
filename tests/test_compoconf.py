@@ -470,14 +470,29 @@ def test_classproperty_direct_callable():
     assert Example.value == "value"  # pylint: disable=W0143
 
 
-def test_classproperty_without_wrapped():
+def test_classproperty_without_wrapped_raises():
+    """A misconfigured classproperty must say so, not read as None."""
     from compoconf.compoconf import classproperty
 
     class Dummy:
         fget = object()
 
-    result = classproperty.__get__(Dummy(), None, type("Owner", (), {}))
-    assert result is None
+    with pytest.raises(TypeError, match="neither callable nor a wrapper"):
+        classproperty.__get__(Dummy(), None, type("Owner", (), {}))
+
+
+def test_classproperty_accepts_a_plain_callable():
+    from compoconf.compoconf import classproperty
+
+    class Holder:
+        marker = "holder"
+
+        @classproperty
+        def value(cls):  # pylint: disable=E0213
+            return cls.marker
+
+    # pylint cannot model a custom descriptor, so it reads Holder.value as the function itself
+    assert Holder.value == "holder"  # pylint: disable=W0143
 
 
 def test_reregistration_warning_when_replacing_class(reset_registry, caplog):
