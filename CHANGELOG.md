@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-06
+
+### Upgrading from 0.2.x
+
+Mostly additive, with three behaviour changes worth checking before you upgrade:
+
+- **A dump now contains only what JSON and YAML can represent** — `null`, `bool`, `int`, `float`,
+  `str`, array, object. `tuple` and `set`/`frozenset` fields previously came out of
+  `asdict`/`dump_config` as live Python objects, which could not be written to a file at all (sets)
+  or did not survive the round trip through one (tuples). They are now lists, sets sorted. This is
+  what the dump contract always meant; the annotation is what restores the `tuple`/`set` on the way
+  back in, so parsing is unchanged. Code that *indexes* a dumped tuple is unaffected; code that
+  asserts `isinstance(dumped["field"], tuple)` or compares against a golden file is not.
+- **`strict` now applies to nested configs**, not just the outermost one. `strict=True` is the
+  default and is unaffected; only callers who explicitly pass `strict=False` see a difference, and
+  it is a loosening — configs that previously raised on a nested unknown key now parse.
+- **A config field whose name shadows an inherited attribute now raises `TypeError`** instead of
+  silently defaulting to that attribute. This surfaces a class of broken config class that
+  previously parsed and failed later; see *Fixed* below.
+
 ### Added
 
 - `FrozenNonStrictDataclass`: an immutable, hashable counterpart of `NonStrictDataclass`.
@@ -45,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real signatures instead of *"module is installed, but missing library stubs or py.typed marker"* on
   every import — which was an odd gap for a library whose whole premise is type-driven config
   parsing.
+
+- Python 3.12 and 3.13 are covered by CI, and the package version is single-sourced from
+  `compoconf.__version__` so the module and the distribution metadata cannot disagree.
 
 ### Performance
 
@@ -182,3 +205,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented non-strict dataclasses, the frozen variant, registry discovery/introspection
   (`load` / `registered`), the recommended `Type | None = None` pattern for nested typed configs,
   and the "extras are untyped plain data" contract.
+
+[Unreleased]: https://github.com/kpoeppel/compoconf/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kpoeppel/compoconf/releases/tag/v0.3.0
