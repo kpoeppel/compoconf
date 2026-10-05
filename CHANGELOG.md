@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   effect below the top level and the docstring gave no hint of that. It now propagates through
   fields, list/tuple/set elements, dict values and union members.
 
+- `dump_config` now recurses into lists and tuples. Its docstring promised "a dataclass or
+  dict/list of dataclasses", but only mappings were handled, so a top-level list of configs came
+  back holding raw config objects and was not JSON/YAML-serializable. Tuples stay tuples, matching
+  `asdict`; strings and bytes are not treated as sequences. (Sets are still passed through
+  unchanged, as in `asdict`.)
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

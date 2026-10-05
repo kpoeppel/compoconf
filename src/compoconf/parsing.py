@@ -956,6 +956,9 @@ def dump_config(a: Any) -> Any:
     Converts a dataclass or dict/list of dataclasses into a PyTree, i.e.
     a nested structure of core python types.
 
+    Mappings, lists and tuples are recursed into (tuples stay tuples, matching :func:`asdict`);
+    strings and bytes are left alone rather than treated as sequences of characters.
+
     Args:
         a: Any dataclass or structure of dataclasses
 
@@ -966,4 +969,7 @@ def dump_config(a: Any) -> Any:
         return asdict(a)
     if hasattr(a, "items"):
         return {k: dump_config(v) for k, v in a.items()}
+    if isinstance(a, (list, tuple)) or (isinstance(a, Sequence) and not isinstance(a, (str, bytes, bytearray))):
+        dumped = (dump_config(item) for item in a)
+        return tuple(dumped) if isinstance(a, tuple) else list(dumped)
     return a

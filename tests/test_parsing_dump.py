@@ -2,6 +2,7 @@
 Parsing Tests for CompoConf.
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -205,6 +206,41 @@ def test_primitive_types():
     # Nested structures
     nested = {"a": [1, 2, {"b": "test"}]}
     assert dump_config(nested) == nested
+
+
+def test_dump_config_recurses_into_sequences(reset_registry):
+    """A top-level list/tuple of configs must be dumped, not handed back as raw objects."""
+
+    @dataclass
+    class ItemConfig(ConfigInterface):
+        a: int = 1
+
+    assert dump_config([ItemConfig(1), ItemConfig(2)]) == [{"class_name": "", "a": 1}, {"class_name": "", "a": 2}]
+    # tuples stay tuples, matching asdict
+    assert dump_config((ItemConfig(3),)) == ({"class_name": "", "a": 3},)
+    # arbitrary nesting of mappings and sequences
+    assert dump_config({"k": [ItemConfig(4), {"j": (ItemConfig(5),)}]}) == {
+        "k": [{"class_name": "", "a": 4}, {"j": ({"class_name": "", "a": 5},)}]
+    }
+    # the result is JSON-serializable, which it was not before
+    assert json.dumps(dump_config([ItemConfig(1)]))
+
+
+def test_dump_config_does_not_treat_strings_as_sequences():
+    assert dump_config("hello") == "hello"
+    assert dump_config(["a", "b"]) == ["a", "b"]
+    assert dump_config(b"xy") == b"xy"
+    assert dump_config(bytearray(b"xy")) == bytearray(b"xy")
+
+
+def test_dump_config_round_trips_a_list_of_configs(reset_registry):
+    @dataclass
+    class Point:
+        x: int = 0
+        y: int = 0
+
+    points = [Point(1, 2), Point(3, 4)]
+    assert parse_config(List[Point], dump_config(points)) == points
 
 
 # pylint: enable=C0115
