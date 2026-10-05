@@ -196,7 +196,7 @@ class FrozenNonStrictDataclass(_NonStrictDataclassBase):
     _non_strict: bool = True
 
 
-def sorted_for_dump(values: list) -> list:
+def _sorted_for_dump(values: list) -> list:
     """Order the dumped elements of a set so that the output is stable across runs.
 
     A set has no order of its own, and ``set`` iteration order is hash-randomized for strings, so an
@@ -303,7 +303,7 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
             # 4b) Sets -- no JSON/YAML representation of their own, so they become arrays.  The
             # annotation is what turns the array back into a set, so nothing is lost.
             if isinstance(o, AbstractSet):
-                return sorted_for_dump([convert(v) for v in o])
+                return _sorted_for_dump([convert(v) for v in o])
 
             # 5) Base case: leave as-is
             return o

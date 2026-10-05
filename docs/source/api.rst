@@ -55,6 +55,8 @@ Configuration Parsing and Serialization
 
 .. autofunction:: compoconf.asdict
 
+.. autofunction:: compoconf.clear_parse_cache
+
 
 Registry Discovery and Introspection
 ------------------------------------

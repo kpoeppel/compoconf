@@ -30,7 +30,7 @@ from typing import Set, Tuple, TypeVar, get_args, get_origin
 
 from compoconf.compoconf import _REGISTRY_EPOCH, LazyConfigUnion, _LazyOr, cached_type_hints, clear_type_hints_cache
 from compoconf.extension_types import dump_extension, extension_parser
-from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict, sorted_for_dump
+from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, _sorted_for_dump, asdict
 
 if sys.version_info >= (3, 10):
     from types import UnionType
@@ -1065,5 +1065,5 @@ def dump_config(a: Any) -> Any:  # pylint: disable=too-many-return-statements
     if isinstance(a, (list, tuple)) or (isinstance(a, Sequence) and not isinstance(a, (str, bytes, bytearray))):
         return [dump_config(item) for item in a]
     if isinstance(a, AbstractSet):
-        return sorted_for_dump([dump_config(item) for item in a])
+        return _sorted_for_dump([dump_config(item) for item in a])
     return a
