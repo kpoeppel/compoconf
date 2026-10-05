@@ -23,6 +23,10 @@ test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-sugar>=0.9.7",
+    # Used by the round-trip and schema-agreement suites.  Without them those tests skip rather
+    # than fail, so they are listed here to make sure CI actually runs them.
+    "pyyaml>=6.0",
+    "jsonschema>=4.0.0",
 ]
 docs = [
     "sphinx>=7.0.0",

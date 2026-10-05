@@ -14,29 +14,24 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Literal, Optional, Sequence, Set, Tuple, Union
 from uuid import UUID
 
 import pytest  # pylint: disable=E0401
 
-from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, register, register_interface
+# sibling helper module; mypy does not know pytest puts the tests directory on sys.path
+from sample_configs import Color, Leaf, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+
+try:
+    import yaml  # type: ignore[import-untyped]  # pylint: disable=E0401
+except ImportError:  # pragma: no cover - PyYAML is an optional test dependency
+    yaml = None  # type: ignore[assignment]
+
 from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
 from compoconf.parsing import dump_config, parse_config
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
-
-
-class Color(Enum):
-    RED = "red"
-    BLUE = "blue"
-
-
-@dataclass
-class Leaf:
-    a: int = 1
-    b: str = "x"
 
 
 SHAPES = [
@@ -87,9 +82,10 @@ SET_SHAPES = [
 
 
 def _assert_serializable(dumped):
-    yaml = pytest.importorskip("yaml")
+    """Both serializers must accept the dump; the YAML half is skipped if PyYAML is absent."""
     json.dumps(dumped)
-    yaml.safe_dump(dumped)
+    if yaml is not None:
+        yaml.safe_dump(dumped)
 
 
 def _assert_round_trips(annotation, data):
@@ -141,31 +137,13 @@ def test_sets_parse_from_an_array_even_though_they_do_not_dump_to_one():
 @pytest.fixture
 def stack(reset_registry):
     """A realistic config tree: cfgtype unions, enums, extension scalars, containers."""
-
-    @register_interface
-    class Mixer(RegistrableConfigInterface):
-        pass
-
-    @dataclass
-    class AttnConfig(ConfigInterface):
-        heads: int = 8
-        scale: float = 1.0
-
-    @register
-    class Attn(Mixer):  # pylint: disable=W0612
-        config: AttnConfig
-
-    @dataclass
-    class ConvConfig(ConfigInterface):
-        kernel: int = 3
-
-    @register
-    class Conv(Mixer):  # pylint: disable=W0612
-        config: ConvConfig
+    # not named ``mixer``: CPython evaluates ``x: ann = val`` by storing val *before* evaluating
+    # ann, so a local shadowing the field name would already be None by then.
+    registered = register_mixer()
 
     @dataclass
     class Block:
-        mixer: Mixer.cfgtype = None
+        mixer: registered.interface.cfgtype = None
         name: str = "block"
         color: Color = Color.RED
         out: Optional[Path] = None
@@ -209,8 +187,8 @@ def test_round_trip_through_a_json_file(stack, tmp_path):
     assert parse_file(stack, path) == parse_config(stack, STACK_DATA)
 
 
+@pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
 def test_round_trip_through_a_yaml_file(stack, tmp_path):
-    yaml = pytest.importorskip("yaml")
     from compoconf import parse_file  # pylint: disable=C0415
 
     path = tmp_path / "config.yaml"

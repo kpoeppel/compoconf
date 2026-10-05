@@ -107,22 +107,8 @@ def test_union_error_ranks_the_deepest_failure_first():
     assert "leaves.0.x" in tried
 
 
-def test_union_error_falls_back_to_shortest_message_at_equal_depth():
-    @dataclass
-    class SmallConfig:
-        a: int
-
-    @dataclass
-    class BigConfig:
-        field_one: int
-        field_two: str
-        field_three: float
-
-    # both are rejected on their own key set, so both fail at depth 0
-    with pytest.raises(ValueError) as exc_info:
-        parse_config(Union[BigConfig, SmallConfig], {"wrong": True})
-    tried = str(exc_info.value).split("Tried:")[1]
-    assert tried.index("SmallConfig") < tried.index("BigConfig")
+# The length tie-break between members that failed at the same depth is covered by
+# test_parsing.py::test_union_parse_error_shortest_first -- not repeated here.
 
 
 @pytest.mark.parametrize(
