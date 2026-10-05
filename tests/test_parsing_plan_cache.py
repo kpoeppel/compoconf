@@ -8,7 +8,7 @@ rename, and the lazily rendered error messages.
 import copy
 import pickle
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, FrozenSet, List, Literal, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Literal, Optional, Union
 
 import pytest  # pylint: disable=E0401
 
@@ -20,7 +20,7 @@ except ImportError:
     is_omegaconf_available = False
 
 # sibling helper module; mypy does not know pytest puts the tests directory on sys.path
-from sample_configs import register_growing_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+from sample_configs import SHAPES, register_growing_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
 
 import compoconf.parsing as parsing_module
 from compoconf.compoconf import (
@@ -389,46 +389,25 @@ def test_required_fields_are_still_detected_around_defaults():
 # ---------------------------------------------------------------------- None handling per shape
 
 
-@dataclass
-class Target:
-    x: int = 0
-
-
-NON_OPTIONAL_ANNOTATIONS = [
-    int,
-    float,
-    str,
-    bool,
-    bytes,
-    Literal["a", "b"],
-    Target,
-    list[int],
-    List[int],
-    Sequence[int],
-    set[int],
-    Set[int],
-    frozenset[int],
-    FrozenSet[int],
-    tuple[int, str],
-    tuple[int, ...],
-    Tuple[int],
-    dict[str, int],
-    Dict[str, int],
-    Union[int, str],
-    list,  # untyped container: still must reject None rather than crash
+# Derived from the shared shape table rather than restated, so a shape added there is automatically
+# checked here too.  ``Optional[int]`` and ``Any`` are the two that legitimately accept None; the
+# bare containers are not "supported shapes" but must still reject None rather than crash.
+_SHAPES_ACCEPTING_NONE = {"optional-int", "any"}
+NON_OPTIONAL_ANNOTATIONS = [s.annotation for s in SHAPES if s.label not in _SHAPES_ACCEPTING_NONE] + [
+    list,
     dict,
     tuple,
     set,
 ]
 
 
-@pytest.mark.parametrize("annotation", NON_OPTIONAL_ANNOTATIONS)
+@pytest.mark.parametrize("annotation", NON_OPTIONAL_ANNOTATIONS, ids=repr)
 def test_none_is_rejected_for_non_optional_annotations(annotation):
     with pytest.raises(ValueError, match="Tried to parse None"):
         parse_config(annotation, None)
 
 
-@pytest.mark.parametrize("annotation", NON_OPTIONAL_ANNOTATIONS)
+@pytest.mark.parametrize("annotation", NON_OPTIONAL_ANNOTATIONS, ids=repr)
 def test_none_is_accepted_when_wrapped_in_optional(annotation):
     assert parse_config(Optional[annotation], None) is None
 

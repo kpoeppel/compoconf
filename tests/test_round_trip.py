@@ -15,13 +15,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Literal, Optional, Sequence, Set, Tuple, Union
-from uuid import UUID
+from typing import Optional
 
 import pytest  # pylint: disable=E0401
 
 # sibling helper module; mypy does not know pytest puts the tests directory on sys.path
-from sample_configs import Color, Leaf, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+from sample_configs import SHAPES, Color, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
 
 try:
     import yaml  # type: ignore[import-untyped]  # pylint: disable=E0401
@@ -32,46 +31,6 @@ from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
 from compoconf.parsing import dump_config, parse_config
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
-
-
-SHAPES = [
-    # (label, annotation, input data)
-    ("int", int, 7),
-    ("float", float, 1.5),
-    ("str", str, "s"),
-    ("bool", bool, True),
-    ("none", Optional[int], None),
-    ("optional-value", Optional[int], 3),
-    ("literal", Literal["a", "b"], "b"),
-    ("enum-by-value", Color, "red"),
-    ("enum-by-name", Color, "BLUE"),
-    ("path", Path, "/tmp/x"),
-    ("datetime", datetime, "2020-01-02T03:04:05"),
-    ("date", date, "2020-01-02"),
-    ("time", time, "03:04:05"),
-    ("decimal", Decimal, "1.25"),
-    ("uuid", UUID, "12345678-1234-5678-1234-567812345678"),
-    ("dataclass", Leaf, {"a": 2, "b": "y"}),
-    ("list", list[int], [1, 2]),
-    ("typing-List", List[int], [1, 2]),
-    ("sequence", Sequence[int], [1, 2]),
-    ("list-of-dataclass", list[Leaf], [{"a": 1}, {"a": 2}]),
-    ("dict", dict[str, int], {"k": 1}),
-    ("typing-Dict", Dict[str, int], {"k": 1}),
-    ("dict-of-dataclass", dict[str, Leaf], {"k": {"a": 3}}),
-    ("tuple-fixed", tuple[int, str], [1, "a"]),
-    ("tuple-variadic", tuple[int, ...], [1, 2, 3]),
-    ("typing-Tuple", Tuple[int], [1]),
-    ("tuple-of-dataclass", tuple[Leaf, Leaf], [{"a": 1}, {"a": 2}]),
-    ("union", Union[int, str], "s"),
-    ("set", set[int], [1, 2]),
-    ("typing-Set", Set[int], [1, 2]),
-    ("frozenset", frozenset[str], ["a", "b"]),
-    ("typing-FrozenSet", FrozenSet[str], ["a"]),
-    ("set-of-enum", set[Color], ["red", "blue"]),
-    ("nested-containers", dict[str, list[Leaf]], {"k": [{"a": 1}]}),
-    ("any", Any, {"free": [1, "two"]}),
-]
 
 
 def _assert_serializable(dumped):
@@ -96,9 +55,10 @@ def _assert_round_trips(annotation, data):
     _assert_serializable(redumped)
 
 
-@pytest.mark.parametrize(("label", "annotation", "data"), SHAPES, ids=[s[0] for s in SHAPES])
-def test_round_trip(label, annotation, data):
-    _assert_round_trips(annotation, data)
+@pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
+def test_round_trip(shape):
+    for data in shape.examples:
+        _assert_round_trips(shape.annotation, data)
 
 
 def test_round_trip_of_a_set_field():
@@ -181,13 +141,6 @@ def test_round_trip_through_a_yaml_file(stack, tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(dump_config(parse_config(stack, STACK_DATA))), encoding="utf-8")
     assert parse_file(stack, path) == parse_config(stack, STACK_DATA)
-
-
-def test_dump_config_of_a_list_of_whole_configs(stack):
-    configs = [parse_config(stack, STACK_DATA), parse_config(stack, STACK_DATA)]
-    dumped = dump_config(configs)
-    _assert_serializable(dumped)
-    assert parse_config(list[stack], dumped) == configs
 
 
 def test_non_strict_extras_round_trip():

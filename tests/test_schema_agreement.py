@@ -12,57 +12,17 @@ parse_config validates instead of coercing.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
-from decimal import Decimal
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
-from uuid import UUID
 
 import pytest  # pylint: disable=E0401
 
 # sibling helper module; mypy does not know pytest puts the tests directory on sys.path
-from sample_configs import Color, Leaf, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+from sample_configs import SHAPES, Color, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
 
 from compoconf.parsing import dump_config, parse_config
 from compoconf.schema import to_json_schema
 
 jsonschema = pytest.importorskip("jsonschema", reason="jsonschema is needed to validate the emitted schemas")
-
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
-
-
-# (label, annotation, values the schema should accept, values it should reject)
-CASES = [
-    ("int", int, [0, -3, 7], ["5", 1.5, None, [], {}]),
-    ("float", float, [1.5, 0.0, 3], ["1.5", None, []]),
-    ("str", str, ["", "s"], [5, None, []]),
-    ("bool", bool, [True, False], ["true", 1, None]),
-    ("optional-int", Optional[int], [3, None], ["3", 1.5]),
-    ("literal", Literal["a", "b"], ["a", "b"], ["c", 1, None]),
-    ("enum", Color, ["red", "blue"], ["green", "RED", None]),
-    ("path", Path, ["/tmp/x", "rel"], [5, None]),
-    ("datetime", datetime, ["2020-01-02T03:04:05"], [5, None]),
-    ("date", date, ["2020-01-02"], [5, None]),
-    ("time", time, ["03:04:05"], [5, None]),
-    ("decimal", Decimal, ["1.25"], [None]),
-    ("uuid", UUID, ["12345678-1234-5678-1234-567812345678"], [5, None]),
-    ("list", list[int], [[], [1, 2]], [["1"], {}, None, 5]),
-    ("typing-List", List[int], [[1]], [["x"]]),
-    ("sequence", Sequence[int], [[1]], [["x"]]),
-    ("set", set[int], [[], [1, 2]], [[1, 1], ["x"], None]),
-    ("typing-Set", Set[int], [[1]], [[1, 1]]),
-    ("dict", dict[str, int], [{}, {"k": 1}], [{"k": "1"}, [], None]),
-    ("typing-Dict", Dict[str, int], [{"k": 1}], [{"k": "1"}]),
-    ("tuple-fixed", tuple[int, str], [[1, "a"]], [[1], [1, "a", 2], ["1", "a"]]),
-    ("tuple-variadic", tuple[int, ...], [[], [1, 2]], [["x"]]),
-    ("typing-Tuple", Tuple[int], [[1]], [[1, 2]]),
-    ("dataclass", Leaf, [{}, {"a": 2}, {"a": 2, "b": "y"}], [{"a": "2"}, {"nope": 1}, None, []]),
-    ("list-of-dataclass", list[Leaf], [[{"a": 1}]], [[{"nope": 1}]]),
-    ("dict-of-dataclass", dict[str, Leaf], [{"k": {"a": 1}}], [{"k": {"nope": 1}}]),
-    ("union", Union[int, str], [1, "s"], [None, [], 1.5]),
-    ("nested", dict[str, list[Leaf]], [{"k": [{"a": 1}]}], [{"k": [{"nope": 1}]}]),
-    ("any", Any, [1, "s", None, [], {}], []),
-]
 
 
 def _validator(annotation):
@@ -71,36 +31,36 @@ def _validator(annotation):
     return jsonschema.Draft202012Validator(schema)
 
 
-@pytest.mark.parametrize(("label", "annotation", "accepted", "rejected"), CASES, ids=[c[0] for c in CASES])
-def test_schema_accepts_exactly_what_it_should(label, annotation, accepted, rejected):
+@pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
+def test_schema_accepts_exactly_what_it_should(shape):
     """Sanity-check the case table itself against the validator before using it below."""
-    validator = _validator(annotation)
-    for value in accepted:
-        assert validator.is_valid(value), f"schema for {label} should accept {value!r}"
-    for value in rejected:
-        assert not validator.is_valid(value), f"schema for {label} should reject {value!r}"
+    validator = _validator(shape.annotation)
+    for value in shape.accepted:
+        assert validator.is_valid(value), f"schema for {shape.label} should accept {value!r}"
+    for value in shape.rejected:
+        assert not validator.is_valid(value), f"schema for {shape.label} should reject {value!r}"
 
 
-@pytest.mark.parametrize(("label", "annotation", "accepted", "rejected"), CASES, ids=[c[0] for c in CASES])
-def test_anything_the_schema_accepts_parse_config_accepts(label, annotation, accepted, rejected):
+@pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
+def test_anything_the_schema_accepts_parse_config_accepts(shape):
     """The schema must not promise more than the parser delivers.
 
     Checked with ``strict_types=True``: by default parse_config coerces, so it is *more* permissive
     than the schema, and the interesting direction is whether a schema-valid document can fail to
     parse.
     """
-    for value in accepted:
-        parse_config(annotation, value, strict_types=True)
+    for value in shape.accepted:
+        parse_config(shape.annotation, value, strict_types=True)
 
 
-@pytest.mark.parametrize(("label", "annotation", "accepted", "rejected"), CASES, ids=[c[0] for c in CASES])
-def test_what_parse_config_accepts_dumps_back_to_something_schema_valid(label, annotation, accepted, rejected):
+@pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
+def test_what_parse_config_accepts_dumps_back_to_something_schema_valid(shape):
     """The round trip has to land inside the schema, or a dumped config fails its own validation."""
-    validator = _validator(annotation)
-    for value in accepted:
-        dumped = dump_config(parse_config(annotation, value, strict_types=True))
+    validator = _validator(shape.annotation)
+    for value in shape.accepted:
+        dumped = dump_config(parse_config(shape.annotation, value, strict_types=True))
         errors = list(validator.iter_errors(dumped))
-        assert not errors, f"dump of {label} {value!r} -> {dumped!r} violates its own schema: {errors[0].message}"
+        assert not errors, f"dump of {shape.label} {value!r} -> {dumped!r} violates its own schema: {errors[0].message}"
 
 
 def test_a_dumped_tuple_validates_against_its_own_schema():
