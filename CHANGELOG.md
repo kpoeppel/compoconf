@@ -123,6 +123,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside that window would cache stale `cfgtype` members stamped with the new epoch and never
   invalidate again. A mutation that raises (`pop` of a missing key) no longer bumps at all.
 
+- `dump_config` now converts enums and the extension scalars (`Path`, `datetime`/`date`/`time`,
+  `Decimal`, `UUID`) the same way `asdict` does. It only handled dataclasses, mappings and
+  sequences, so `dump_config({"c": Color.RED})` returned the live enum member and
+  `dump_config([Path("/a")])` the live `Path` — neither JSON- nor YAML-serializable. A value now
+  dumps to the same thing whether it sits inside a config or is passed in directly.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

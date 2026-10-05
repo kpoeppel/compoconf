@@ -28,7 +28,7 @@ from typing import Sequence as tSequence
 from typing import Set, Tuple, TypeVar, get_args, get_origin
 
 from compoconf.compoconf import _REGISTRY_EPOCH, LazyConfigUnion, _LazyOr, cached_type_hints, clear_type_hints_cache
-from compoconf.extension_types import extension_parser
+from compoconf.extension_types import dump_extension, extension_parser
 from compoconf.nonstrict_dataclass import _NonStrictDataclassBase, asdict
 
 if sys.version_info >= (3, 10):
@@ -1039,8 +1039,11 @@ def dump_config(a: Any) -> Any:
     Converts a dataclass or dict/list of dataclasses into a PyTree, i.e.
     a nested structure of core python types.
 
-    Mappings, lists and tuples are recursed into (tuples stay tuples, matching :func:`asdict`);
-    strings and bytes are left alone rather than treated as sequences of characters.
+    Conversions follow :func:`asdict` exactly, so a value dumps to the same thing whether it sits
+    inside a config or is passed here directly: enums become their value, the extension scalars
+    (``Path``, ``datetime``/``date``/``time``, ``Decimal``, ``UUID``) become their JSON-safe form,
+    and mappings, lists and tuples are recursed into (tuples stay tuples). Strings and bytes are
+    left alone rather than treated as sequences of characters.
 
     Args:
         a: Any dataclass or structure of dataclasses
@@ -1050,6 +1053,11 @@ def dump_config(a: Any) -> Any:
     """
     if is_dataclass(a) and not isinstance(a, type):
         return asdict(a)
+    if isinstance(a, Enum):
+        return a.value
+    handled, extension_value = dump_extension(a)
+    if handled:
+        return extension_value
     if hasattr(a, "items"):
         return {k: dump_config(v) for k, v in a.items()}
     if isinstance(a, (list, tuple)) or (isinstance(a, Sequence) and not isinstance(a, (str, bytes, bytearray))):
