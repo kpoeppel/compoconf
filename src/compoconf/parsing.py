@@ -249,8 +249,8 @@ def _get_plan(annotation, strict: bool, strict_types: bool):
 
     Args:
         annotation: The type annotation to build a parser for.
-        strict: Whether unknown/missing keys are an error.  Only ever ``False`` for the outermost
-            annotation -- nested values have always been parsed strictly.
+        strict: Whether unknown/missing keys are an error.  Inherited by every nested plan, so it
+            is part of the cache key.
         strict_types: Whether scalars are validated instead of coerced.
 
     Returns:
@@ -281,17 +281,17 @@ def _compile(annotation, strict: bool, strict_types: bool):
     if (is_dataclass(annotation) and annotation is not Any) or (
         isclass(annotation) and issubclass(annotation, dict) and annotation is not dict
     ):
-        return _make_dataclass_parser(annotation, strict, strict_types, _accepts_none(annotation))
+        return _make_dataclass_parser(annotation, strict, strict_types)
 
     origin = getattr(annotation, "__origin__", annotation)
     args = getattr(annotation, "__args__", None)
     if origin in _COMPOSITIONAL_ORIGINS:
-        return _make_compositional_parser(origin, args, strict_types, _accepts_none(annotation), annotation)
+        return _make_compositional_parser(origin, args, strict, strict_types, annotation)
 
     if _is_union_like(annotation):
-        return _make_union_parser(annotation, strict_types)
+        return _make_union_parser(annotation, strict, strict_types)
 
-    return _make_scalar_parser(annotation, strict_types, _accepts_none(annotation))
+    return _make_scalar_parser(annotation, strict_types)
 
 
 def _parse_none_annotation(data, key_history: str = ""):
@@ -323,7 +323,7 @@ def _union_options(annotation):
 # ---------------------------------------------------------------------------
 
 
-def _class_name_map(annotation, strict_types):
+def _class_name_map(annotation, strict, strict_types):
     """Index the config classes reachable from ``annotation`` by their ``class_name``.
 
     Returns:
@@ -336,11 +336,11 @@ def _class_name_map(annotation, strict_types):
     for option in options:
         name = getattr(option, "class_name", None)
         if isinstance(name, str):
-            by_name[name] = (option, _get_plan(option, True, strict_types))
+            by_name[name] = (option, _get_plan(option, strict, strict_types))
     return by_name, options
 
 
-def _resolve_by_class_name(entry, class_name, strict_types):
+def _resolve_by_class_name(entry, class_name, strict, strict_types):
     """Return the parser for the member of ``entry``'s annotation named by ``class_name``.
 
     Raises:
@@ -349,14 +349,14 @@ def _resolve_by_class_name(entry, class_name, strict_types):
     epoch = _REGISTRY_EPOCH[0]
     state = entry[4]
     if state is None or state[0] != epoch:
-        state = entry[4] = (epoch,) + _class_name_map(entry[1], strict_types)
+        state = entry[4] = (epoch,) + _class_name_map(entry[1], strict, strict_types)
         resolved = state[1].get(class_name)
     else:
         resolved = state[1].get(class_name)
         if resolved is None or getattr(resolved[0], "class_name", None) != class_name:
             # ``class_name`` can also be reassigned without touching the registry; rebuild once
             # before giving up so a stale index never turns a valid config into an error.
-            state = entry[4] = (epoch,) + _class_name_map(entry[1], strict_types)
+            state = entry[4] = (epoch,) + _class_name_map(entry[1], strict, strict_types)
             resolved = state[1].get(class_name)
     if resolved is None:
         raise KeyError(
@@ -367,8 +367,9 @@ def _resolve_by_class_name(entry, class_name, strict_types):
     return resolved[1]
 
 
-def _make_dataclass_parser(cls, strict: bool, strict_types: bool, accepts_none: bool):  # noqa: C901
+def _make_dataclass_parser(cls, strict: bool, strict_types: bool):  # noqa: C901
     """Compile a parser for a dataclass (or ``dict`` subclass such as a ``TypedDict``)."""
+    accepts_none = _accepts_none(cls)
     annotations = _get_all_annotations(cls)
     # Keys the data is allowed to contain: every annotated field, plus the implicit discriminator.
     known = frozenset(annotations) | {"class_name"}
@@ -432,11 +433,11 @@ def _make_dataclass_parser(cls, strict: bool, strict_types: bool, accepts_none: 
             else:
                 discriminated = isinstance(value, _MAPPING_CLASSES) and "class_name" in value
             if discriminated:
-                parser = _resolve_by_class_name(entry, value["class_name"], strict_types)
+                parser = _resolve_by_class_name(entry, value["class_name"], strict, strict_types)
             else:
                 parser = entry[2]
                 if parser is None:
-                    parser = entry[2] = _get_plan(entry[1], True, strict_types)
+                    parser = entry[2] = _get_plan(entry[1], strict, strict_types)
             values[key] = parser(value, key_history + entry[3] if key_history else key)
 
         # Non-strict dataclasses absorb everything the annotations did not claim.
@@ -455,32 +456,32 @@ def _make_dataclass_parser(cls, strict: bool, strict_types: bool, accepts_none: 
 # ---------------------------------------------------------------------------
 
 
-def _make_compositional_parser(origin, args, strict_types: bool, accepts_none: bool, annotation):
+def _make_compositional_parser(origin, args, strict, strict_types, annotation):
     """Dispatch to the container parser matching ``origin``."""
     if origin in (dict, Dict):
-        return _make_dict_parser(args, strict_types, accepts_none, annotation)
+        return _make_dict_parser(args, strict, strict_types, annotation)
     if origin in (list, List, Sequence, tSequence):
-        return _make_list_parser(args, strict_types, accepts_none, annotation)
+        return _make_list_parser(args, strict, strict_types, annotation)
     if origin in (set, Set, frozenset, FrozenSet):
-        return _make_set_parser(args, origin, strict_types, accepts_none, annotation)
+        return _make_set_parser(args, origin, strict, strict_types, annotation)
     if origin in (tuple, Tuple):
-        return _make_tuple_parser(args, strict_types, accepts_none, annotation)
+        return _make_tuple_parser(args, strict, strict_types, annotation)
     return None
 
 
-def _make_list_parser(args, strict_types: bool, accepts_none: bool, annotation):
+def _make_list_parser(args, strict: bool, strict_types: bool, annotation):
     """Compile a parser for ``list``/``Sequence`` annotations."""
+    accepts_none = _accepts_none(annotation)
     if not args or len(args) != 1:
         # Untyped lists are rejected -- but only once the value itself is known to be list-shaped,
         # which is why this is checked inside the parser rather than here.
         return _make_bad_container_parser(
-            accepts_none,
             annotation,
             (tuple, list, ListConfig),
             "Expected list, got {t} at key {k}",
             "List type must have exactly 1 type argument at key {k}",
         )
-    element = _get_plan(args[0], True, strict_types)
+    element = _get_plan(args[0], strict, strict_types)
 
     def parse(data, key_history: str = ""):
         if data is None:
@@ -494,18 +495,18 @@ def _make_list_parser(args, strict_types: bool, accepts_none: bool, annotation):
     return parse
 
 
-def _make_set_parser(args, origin, strict_types: bool, accepts_none: bool, annotation):
+def _make_set_parser(args, origin, strict: bool, strict_types: bool, annotation):
     """Compile a parser for ``set``/``frozenset`` annotations."""
+    accepts_none = _accepts_none(annotation)
     if not args or len(args) != 1:
         return _make_bad_container_parser(
-            accepts_none,
             annotation,
             (set, frozenset, list, tuple, ListConfig),
             "Expected set, got {t} at key {k}",
             "Set type must have exactly 1 type argument at key {k}",
         )
     factory = frozenset if origin in (frozenset, FrozenSet) else set
-    element = _get_plan(args[0], True, strict_types)
+    element = _get_plan(args[0], strict, strict_types)
 
     def parse(data, key_history: str = ""):
         if data is None:
@@ -519,11 +520,11 @@ def _make_set_parser(args, origin, strict_types: bool, accepts_none: bool, annot
     return parse
 
 
-def _make_tuple_parser(args, strict_types: bool, accepts_none: bool, annotation):
+def _make_tuple_parser(args, strict: bool, strict_types: bool, annotation):
     """Compile a parser for ``tuple`` annotations (fixed arity and ``tuple[X, ...]``)."""
+    accepts_none = _accepts_none(annotation)
     if not args:
         return _make_bad_container_parser(
-            accepts_none,
             annotation,
             (tuple, list, ListConfig),
             "Expected tuple or list, got {t} ({d}) at key {k}",
@@ -531,7 +532,7 @@ def _make_tuple_parser(args, strict_types: bool, accepts_none: bool, annotation)
         )
 
     if len(args) == 2 and args[1] is Ellipsis:
-        element = _get_plan(args[0], True, strict_types)
+        element = _get_plan(args[0], strict, strict_types)
 
         def parse_variadic(data, key_history: str = ""):
             if data is None:
@@ -544,7 +545,7 @@ def _make_tuple_parser(args, strict_types: bool, accepts_none: bool, annotation)
 
         return parse_variadic
 
-    parsers = tuple(_get_plan(arg, True, strict_types) for arg in args)
+    parsers = tuple(_get_plan(arg, strict, strict_types) for arg in args)
     arity = len(parsers)
 
     def parse(data, key_history: str = ""):
@@ -563,16 +564,17 @@ def _make_tuple_parser(args, strict_types: bool, accepts_none: bool, annotation)
     return parse
 
 
-def _make_dict_parser(args, strict_types: bool, accepts_none: bool, annotation):
+def _make_dict_parser(args, strict: bool, strict_types: bool, annotation):
     """Compile a parser for ``dict`` annotations."""
+    accepts_none = _accepts_none(annotation)
     if not args or len(args) != 2:
         # Don't allow untyped dicts; unlike the sequence containers, the arity complaint comes
         # before the shape complaint, which the error-message tests pin down.
         return _make_bad_container_parser(
-            accepts_none, annotation, None, None, "Dict type must have exactly 2 type arguments at key {k}"
+            annotation, None, None, "Dict type must have exactly 2 type arguments at key {k}"
         )
-    key_parser = _get_plan(args[0], True, strict_types)
-    value_parser = _get_plan(args[1], True, strict_types)
+    key_parser = _get_plan(args[0], strict, strict_types)
+    value_parser = _get_plan(args[1], strict, strict_types)
 
     def parse(data, key_history: str = ""):
         if data is None:
@@ -592,12 +594,13 @@ def _make_dict_parser(args, strict_types: bool, accepts_none: bool, annotation):
     return parse
 
 
-def _make_bad_container_parser(accepts_none, annotation, shapes, shape_error, arity_error):
+def _make_bad_container_parser(annotation, shapes, shape_error, arity_error):
     """Parser for a container annotation with a missing/invalid element type.
 
     The value is still shape-checked first (``shapes``/``shape_error``) where the original code did
     so, so that e.g. ``list[...]`` without an argument still reports "Expected list" for a string.
     """
+    accepts_none = _accepts_none(annotation)
 
     def parse(data, key_history: str = ""):
         if data is None:
@@ -634,7 +637,7 @@ def _discriminator(options, parsers):
     return by_name or None
 
 
-def _make_union_parser(annotation, strict_types: bool):
+def _make_union_parser(annotation, strict: bool, strict_types: bool):
     """Compile a parser for a union, a constrained ``TypeVar``, or a lazy ``cfgtype`` union."""
     # Lazy unions resolve against the registry, so their member list can still grow after the plan
     # was built; re-resolve whenever the registry changed.
@@ -646,7 +649,7 @@ def _make_union_parser(annotation, strict_types: bool):
         if not options:
             return (_REGISTRY_EPOCH[0], (), (), None, accepts_none)
         options = tuple(options)
-        parsers = tuple(_get_plan(option, True, strict_types) for option in options)
+        parsers = tuple(_get_plan(option, strict, strict_types) for option in options)
         return (_REGISTRY_EPOCH[0], options, parsers, _discriminator(options, parsers), accepts_none)
 
     state = [resolve()]
@@ -780,14 +783,13 @@ def _handle_enum(enum_class: type[Enum], data: Any, key_history: str = "") -> An
 _IDENTITY_SCALARS = frozenset({int, float, str, bytes, complex})
 
 
-def _make_scalar_parser(  # noqa: C901  # pylint: disable=too-many-return-statements
-    annotation, strict_types: bool, accepts_none: bool
-):
+def _make_scalar_parser(annotation, strict_types: bool):  # noqa: C901  # pylint: disable=R0911
     """Compile a parser for a primitive, enum, extension, literal or ``Any`` annotation.
 
     The branch order matches the original ``_handle_base_types_and_literals``: ``bool``, enum,
     extension scalar (``Path``/``datetime``/``Decimal``/``UUID``), constructor call, literal/``Any``.
     """
+    accepts_none = _accepts_none(annotation)
 
     if annotation is bool:
 
@@ -893,7 +895,8 @@ def parse_config(config_class: type, data: Any, strict: bool = True, key_history
     Args:
         config_class: The target configuration class (typically a dataclass)
         data: The configuration data to parse (dict, list, or primitive type)
-        strict: If True, raises error on unknown keys in data
+        strict: If True, raises an error on unknown keys in the data and on declared fields
+            that have neither a value nor a default. Applies recursively to nested configs.
         key_history: Dotted key path for error reporting (used internally during recursion).
         strict_types: If True, scalar fields (``int``/``float``/``str``) are validated instead of
             coerced. By default (False), values are coerced via the target type (e.g. the string
@@ -942,7 +945,7 @@ def _parse_compositional_types(origin, args, data, key_history: str = "", strict
     Returns:
         Object of origin[args] type from parsed data, or ``None`` for an unsupported origin.
     """
-    parser = _make_compositional_parser(origin, args, strict_types, False, args)
+    parser = _make_compositional_parser(origin, args, True, strict_types, args)
     if parser is None:
         return None
     return parser(data, key_history)

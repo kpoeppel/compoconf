@@ -230,18 +230,31 @@ def test_plan_cache_is_bounded(monkeypatch):
     parsing_module.clear_parse_cache()
 
 
-def test_strict_flag_does_not_leak_between_plans():
+def test_strict_flag_propagates_and_does_not_leak_between_plans():
     @dataclass
     class Outer:
         inner: Simple = field(default_factory=Simple)
+        items: list[Simple] = field(default_factory=list)
+        mapping: dict[str, Simple] = field(default_factory=dict)
 
-    assert parse_config(Outer, {"inner": {"a": 1}, "junk": 2}, strict=False).inner.a == 1
+    # strict=False reaches nested configs, through fields, lists and dict values alike
+    relaxed = parse_config(
+        Outer,
+        {
+            "inner": {"a": 1, "junk": 2},
+            "items": [{"a": 2, "junk": 3}],
+            "mapping": {"k": {"a": 3, "junk": 4}},
+            "junk": 5,
+        },
+        strict=False,
+    )
+    assert (relaxed.inner.a, relaxed.items[0].a, relaxed.mapping["k"].a) == (1, 2, 3)
+
     # the strict=True plan must be a separate one, not the relaxed plan from the call above
     with pytest.raises(ValueError, match="Undefined keys"):
         parse_config(Outer, {"inner": {"a": 1}, "junk": 2})
-    # strict=False has never propagated into nested values, and still does not
     with pytest.raises(ValueError, match="Undefined keys"):
-        parse_config(Outer, {"inner": {"a": 1, "junk": 2}}, strict=False)
+        parse_config(Outer, {"inner": {"a": 1, "junk": 2}})
 
 
 # ---------------------------------------------------------------------- None handling per shape

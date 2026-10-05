@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `parse_config(..., strict=False)` now reaches nested configs. `strict` was only applied to the
+  outermost dataclass; every recursive call used the default `strict=True`, so relaxing it had no
+  effect below the top level and the docstring gave no hint of that. It now propagates through
+  fields, list/tuple/set elements, dict values and union members.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
