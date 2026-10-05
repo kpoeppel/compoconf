@@ -294,12 +294,10 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
                 # else:
                 return {convert(k): convert(v) for k, v in o.items()}
 
-            # 4) Sequences (but not str/bytes)
+            # 4) Sequences (but not str/bytes).  Tuples become lists: JSON and YAML have one array
+            # type, and a tuple is not it -- a schema validator rejects it and reading the file back
+            # yields a list anyway.  The annotation restores the tuple, and its order is preserved.
             if isinstance(o, Sequence) and not isinstance(o, (str, bytes, bytearray)):
-                # if retain_collection_types:
-                #     return type(o)(convert(v) for v in o)
-                if isinstance(o, tuple):
-                    return tuple((convert(v) for v in o))
                 return [convert(v) for v in o]
 
             # 4b) Sets -- no JSON/YAML representation of their own, so they become arrays.  The

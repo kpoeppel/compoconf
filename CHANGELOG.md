@@ -139,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arbitrary but still deterministic. The annotation is what turns the array back into a set, so
   nothing is lost in the round trip.
 
+- Tuple values now dump to a list, with their order preserved. JSON and YAML have a single array
+  type and a Python tuple is not it: a JSON Schema validator rejected the dump of a `tuple` field
+  even though `to_json_schema` declares an array for it, and the dump was not a fixed point — writing
+  it to a file and reading it back yielded a list. As with sets, the annotation is what restores the
+  tuple when parsing. (Undeclared extras on a `NonStrictDataclass` are untyped plain data by
+  contract and are still passed through unconverted.)
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with

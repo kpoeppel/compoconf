@@ -117,7 +117,10 @@ def test_asdict_types():
         a: list[int] = field(default_factory=lambda: [1, 2, 3])
         b: tuple[int, str] = (1, "1")
 
-    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"a": [1, 2, 3], "b": (1, "1"), "c": (2, 3)}
+    # A declared tuple field dumps as a list: JSON/YAML have one array type, and the annotation is
+    # what restores the tuple on the way back in.  Extras are untyped plain data by contract and are
+    # passed through unconverted, so the tuple extra ``c`` stays a tuple.
+    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"a": [1, 2, 3], "b": [1, "1"], "c": (2, 3)}
 
 
 def test_post_init():

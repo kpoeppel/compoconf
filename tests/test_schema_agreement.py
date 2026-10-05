@@ -93,27 +93,7 @@ def test_anything_the_schema_accepts_parse_config_accepts(label, annotation, acc
         parse_config(annotation, value, strict_types=True)
 
 
-# Tuples do not survive validation of their own dump: the schema says "array" and dump_config emits a
-# Python tuple, which JSON Schema does not consider one. json.dumps and yaml.safe_dump both write an
-# array, so it serializes, but the dump is not a fixed point -- read the file back and the tuple is a
-# list. parse_config accepts an array for a tuple annotation and to_json_schema declares one, so only
-# the dump side disagrees. Marked strict so that fixing the dump turns these green.
-_DUMP_GAPS = {"tuple-fixed", "tuple-variadic", "typing-Tuple"}
-_DUMP_CASES = [
-    pytest.param(
-        *case,
-        id=case[0],
-        marks=(
-            [pytest.mark.xfail(strict=True, reason="a dumped tuple is not a JSON array")]
-            if case[0] in _DUMP_GAPS
-            else []
-        ),
-    )
-    for case in CASES
-]
-
-
-@pytest.mark.parametrize(("label", "annotation", "accepted", "rejected"), _DUMP_CASES)
+@pytest.mark.parametrize(("label", "annotation", "accepted", "rejected"), CASES, ids=[c[0] for c in CASES])
 def test_what_parse_config_accepts_dumps_back_to_something_schema_valid(label, annotation, accepted, rejected):
     """The round trip has to land inside the schema, or a dumped config fails its own validation."""
     validator = _validator(annotation)
@@ -123,21 +103,21 @@ def test_what_parse_config_accepts_dumps_back_to_something_schema_valid(label, a
         assert not errors, f"dump of {label} {value!r} -> {dumped!r} violates its own schema: {errors[0].message}"
 
 
-def test_a_dumped_tuple_is_not_a_json_array():
-    """Pins the gap above at the level of a single field, and that json/yaml still write it out."""
+def test_a_dumped_tuple_validates_against_its_own_schema():
+    """The schema says "array" and the dump is now one, so a dumped config passes its own schema."""
 
     @dataclass
     class WithTuple:
         dims: tuple[int, int] = (1, 1)
 
+    validator = _validator(WithTuple)
     dumped = dump_config(parse_config(WithTuple, {"dims": [2, 3]}))
-    assert dumped == {"dims": (2, 3)}
-    assert isinstance(dumped["dims"], tuple)
-    # serializable, but not a fixed point: a tuple comes back from the file as a list
-    yaml = pytest.importorskip("yaml")  # pylint: disable=W0621
-    assert yaml.safe_load(yaml.safe_dump(dumped)) == {"dims": [2, 3]}
-    # ... which still re-parses, so the config survives a file round trip even though the dump does not
-    assert parse_config(WithTuple, yaml.safe_load(yaml.safe_dump(dumped))).dims == (2, 3)
+    assert dumped == {"dims": [2, 3]}
+    assert not list(validator.iter_errors(dumped))
+    # and the dump is a fixed point through a file
+    yaml = pytest.importorskip("yaml")
+    assert yaml.safe_load(yaml.safe_dump(dumped)) == dumped
+    assert parse_config(WithTuple, dumped).dims == (2, 3)
 
 
 # ---------------------------------------------------------------------- registry-backed configs

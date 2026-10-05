@@ -1043,8 +1043,9 @@ def dump_config(a: Any) -> Any:  # pylint: disable=too-many-return-statements
     Conversions follow :func:`asdict` exactly, so a value dumps to the same thing whether it sits
     inside a config or is passed here directly: enums become their value, the extension scalars
     (``Path``, ``datetime``/``date``/``time``, ``Decimal``, ``UUID``) become their JSON-safe form,
-    mappings, lists and tuples are recursed into (tuples stay tuples), and sets become sorted lists.
-    Strings and bytes are left alone rather than treated as sequences of characters.
+    mappings and sequences are recursed into, tuples become lists (JSON and YAML have a single array
+    type) and sets become sorted lists. Strings and bytes are left alone rather than treated as
+    sequences of characters.
 
     Args:
         a: Any dataclass or structure of dataclasses
@@ -1062,8 +1063,7 @@ def dump_config(a: Any) -> Any:  # pylint: disable=too-many-return-statements
     if hasattr(a, "items"):
         return {k: dump_config(v) for k, v in a.items()}
     if isinstance(a, (list, tuple)) or (isinstance(a, Sequence) and not isinstance(a, (str, bytes, bytearray))):
-        dumped = (dump_config(item) for item in a)
-        return tuple(dumped) if isinstance(a, tuple) else list(dumped)
+        return [dump_config(item) for item in a]
     if isinstance(a, AbstractSet):
         return sorted_for_dump([dump_config(item) for item in a])
     return a

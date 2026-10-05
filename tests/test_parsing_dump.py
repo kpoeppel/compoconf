@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List
 
+import pytest  # pylint: disable=E0401
+
 from compoconf.compoconf import ConfigInterface, RegistrableConfigInterface, register, register_interface
 from compoconf.nonstrict_dataclass import asdict
 from compoconf.parsing import dump_config, parse_config
@@ -224,11 +226,11 @@ def test_dump_config_recurses_into_sequences(reset_registry):
         a: int = 1
 
     assert dump_config([ItemConfig(1), ItemConfig(2)]) == [{"class_name": "", "a": 1}, {"class_name": "", "a": 2}]
-    # tuples stay tuples, matching asdict
-    assert dump_config((ItemConfig(3),)) == ({"class_name": "", "a": 3},)
+    # a tuple dumps as a list, since JSON and YAML have a single array type
+    assert dump_config((ItemConfig(3),)) == [{"class_name": "", "a": 3}]
     # arbitrary nesting of mappings and sequences
     assert dump_config({"k": [ItemConfig(4), {"j": (ItemConfig(5),)}]}) == {
-        "k": [{"class_name": "", "a": 4}, {"j": ({"class_name": "", "a": 5},)}]
+        "k": [{"class_name": "", "a": 4}, {"j": [{"class_name": "", "a": 5}]}]
     }
     # the result is JSON-serializable, which it was not before
     assert json.dumps(dump_config([ItemConfig(1)]))
@@ -313,6 +315,27 @@ def test_set_dump_is_identical_under_different_hash_seeds(tmp_path):
         outputs.add(result.stdout.strip())
     assert len(outputs) == 1, f"dump differs across hash seeds: {outputs}"
     assert outputs.pop() == '["alpha", "beta", "delta", "epsilon", "gamma"]'
+
+
+def test_dump_config_turns_tuples_into_lists_keeping_their_order(reset_registry):
+    """A tuple's order is meaningful, so unlike a set it is emitted as-is -- just as a list."""
+
+    @dataclass
+    class WithTuples:
+        dims: tuple[int, int] = (1, 1)
+        many: tuple[str, ...] = ()
+
+    config = WithTuples(dims=(2, 3), many=("z", "a"))
+    assert dump_config(config) == {"dims": [2, 3], "many": ["z", "a"]}
+    assert asdict(config) == dump_config(config)
+    assert dump_config((1, 2)) == [1, 2]
+    assert dump_config({"k": (1, 2)}) == {"k": [1, 2]}
+    # the dump is now a fixed point through a file, which it was not while tuples stayed tuples
+    yaml = pytest.importorskip("yaml")
+    dumped = dump_config(config)
+    assert yaml.safe_load(yaml.safe_dump(dumped)) == dumped
+    assert json.loads(json.dumps(dumped)) == dumped
+    assert parse_config(WithTuples, dumped) == config
 
 
 # pylint: enable=C0115
