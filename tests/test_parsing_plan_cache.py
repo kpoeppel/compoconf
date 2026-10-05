@@ -19,6 +19,9 @@ try:
 except ImportError:
     is_omegaconf_available = False
 
+# sibling helper module; mypy does not know pytest puts the tests directory on sys.path
+from sample_configs import register_growing_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+
 import compoconf.parsing as parsing_module
 from compoconf.compoconf import (
     ConfigInterface,
@@ -130,21 +133,8 @@ def test_failure_depth_reads_the_key_path_out_of_a_message(message, depth):
 
 
 def test_late_registration_is_picked_up_by_cached_plans(reset_registry):
-    @register_interface
-    class Mixer(RegistrableConfigInterface):
-        pass
-
-    @dataclass
-    class FirstConfig(ConfigInterface):
-        v: int = 1
-
-    @register
-    class First(Mixer):  # pylint: disable=W0612
-        config: FirstConfig
-
-    @dataclass
-    class Holder:
-        impl: Mixer.cfgtype = None
+    registered = register_growing_mixer()
+    Mixer, FirstConfig, Holder = registered.interface, registered.first_config, registered.holder
 
     # compile and cache a plan for Holder (and for the cfgtype union) while only First exists
     assert parse_config(Holder, {"impl": {"class_name": "First", "v": 5}}).impl.v == 5

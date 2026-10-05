@@ -13,16 +13,12 @@ from typing import Optional
 
 import pytest  # pylint: disable=E0401
 
+# sibling helper module; mypy does not know pytest puts the tests directory on sys.path
+from sample_configs import register_growing_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+
 import compoconf.compoconf as compoconf_module
 import compoconf.parsing as parsing_module
-from compoconf.compoconf import (
-    ConfigInterface,
-    RegistrableConfigInterface,
-    _EpochDict,
-    register,
-    register_interface,
-    registry_epoch,
-)
+from compoconf.compoconf import ConfigInterface, _EpochDict, register, registry_epoch
 from compoconf.parsing import parse_config
 
 # pylint: disable=C0115,C0116,W0212,W0621,W0613
@@ -215,21 +211,8 @@ def test_clearing_the_cache_while_other_threads_parse(monkeypatch):
 def test_registering_while_other_threads_parse(reset_registry):
     """A plan cached before a registration must pick the new member up once it is visible."""
 
-    @register_interface
-    class Mixer(RegistrableConfigInterface):
-        pass
-
-    @dataclass
-    class FirstConfig(ConfigInterface):
-        v: int = 1
-
-    @register
-    class First(Mixer):  # pylint: disable=W0612
-        config: FirstConfig
-
-    @dataclass
-    class Holder:
-        impl: Mixer.cfgtype = None
+    registered = register_growing_mixer()
+    Mixer, Holder = registered.interface, registered.holder
 
     # warm the plan (and the cfgtype resolution) while only First exists
     assert parse_config(Holder, {"impl": {"class_name": "First"}}).impl.v == 1

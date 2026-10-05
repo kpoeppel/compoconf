@@ -67,3 +67,39 @@ def register_mixer():
         config: ConvConfig
 
     return SimpleNamespace(interface=Mixer, attn_config=AttnConfig, conv_config=ConvConfig)
+
+
+def register_growing_mixer():
+    """Register an interface with a *single* implementation, for late-registration tests.
+
+    The point of these tests is that more implementations arrive after a plan has been cached, so
+    unlike :func:`register_mixer` only the first one is registered here.
+
+    Returns:
+        A namespace with ``interface``, ``first_config`` and ``holder`` -- a dataclass whose one
+        field is annotated with the interface's ``cfgtype`` union.
+    """
+
+    @register_interface
+    class Mixer(RegistrableConfigInterface):
+        """The interface implementations get added to during the test."""
+
+    @dataclass
+    class FirstConfig(ConfigInterface):
+        """Config of the only implementation registered up front."""
+
+        v: int = 1
+
+    @register
+    class First(Mixer):  # pylint: disable=W0612
+        """The only implementation registered up front."""
+
+        config: FirstConfig
+
+    @dataclass
+    class Holder:
+        """Config with a field annotated by the interface's lazily resolved union."""
+
+        impl: Mixer.cfgtype = None
+
+    return SimpleNamespace(interface=Mixer, first_config=FirstConfig, holder=Holder)
