@@ -65,35 +65,44 @@ class _EpochDict(dict):
     Tracking mutation on the container rather than in the registry methods keeps the counter
     honest even where the registry is manipulated directly (e.g. the test fixture that resets
     it by popping from ``Registry._registries``).
+
+    Every method bumps *after* delegating, so that a reader which observes the new epoch is
+    guaranteed to also observe the mutation that caused it. Bumping first leaves a window in which
+    the epoch is new but the contents are not: a cache refreshed inside that window would store
+    stale data stamped with the new epoch and never invalidate again. It also means a call that
+    raises (``pop`` of a missing key) does not bump at all, since nothing changed.
     """
 
     def __setitem__(self, key, value):
-        _REGISTRY_EPOCH[0] += 1
         super().__setitem__(key, value)
+        _REGISTRY_EPOCH[0] += 1
 
     def __delitem__(self, key):
-        _REGISTRY_EPOCH[0] += 1
         super().__delitem__(key)
+        _REGISTRY_EPOCH[0] += 1
 
     def pop(self, *args):
+        value = super().pop(*args)
         _REGISTRY_EPOCH[0] += 1
-        return super().pop(*args)
+        return value
 
     def popitem(self):
+        item = super().popitem()
         _REGISTRY_EPOCH[0] += 1
-        return super().popitem()
+        return item
 
     def clear(self):
-        _REGISTRY_EPOCH[0] += 1
         super().clear()
+        _REGISTRY_EPOCH[0] += 1
 
     def update(self, *args, **kwargs):
-        _REGISTRY_EPOCH[0] += 1
         super().update(*args, **kwargs)
+        _REGISTRY_EPOCH[0] += 1
 
     def setdefault(self, key, default=None):
+        value = super().setdefault(key, default)
         _REGISTRY_EPOCH[0] += 1
-        return super().setdefault(key, default)
+        return value
 
 
 _TYPE_HINTS_CACHE: dict = {}

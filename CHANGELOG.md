@@ -118,6 +118,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Its `__get__` fell through to `return None` when `fget` was neither callable nor a wrapper around
   one, so the mistake surfaced as a `None` somewhere else entirely.
 
+- The registry epoch is now bumped *after* the registry is mutated, not before. Bumping first left a
+  window in which the epoch was already new while the contents were not, so a parse plan refreshed
+  inside that window would cache stale `cfgtype` members stamped with the new epoch and never
+  invalidate again. A mutation that raises (`pop` of a missing key) no longer bumps at all.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
