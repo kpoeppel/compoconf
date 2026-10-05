@@ -422,19 +422,34 @@ class _RegistrySingleton:
         self._registry_classes[self._unique_name(cls)] = cls
 
     def _reregistration_warnings(self, config_class, cls, cls_name, parent):
-        if isinstance(config_class.class_name, str) and not config_class.class_name == "":
-            if config_class.class_name != cls_name:
-                LOGGER.info(
-                    f"Re-Registering {cls_name} for dataclass {config_class} "
-                    f"previous class_name {config_class.class_name} in {self._unique_name(parent)}."
-                )
-            elif config_class.class_name in self._registries[self._unique_name(parent)] and (
-                self._registries[self._unique_name(parent)][cls_name] is not cls
-            ):
+        previous_name = config_class.class_name
+        if not isinstance(previous_name, str) or previous_name == "":
+            return
+        registry = self._registries[self._unique_name(parent)]
+        message = (
+            f"Re-Registering {cls_name} for dataclass {config_class} "
+            f"previous class_name {previous_name} in {self._unique_name(parent)}."
+        )
+        if previous_name != cls_name:
+            # ``config_class.class_name`` is about to be overwritten with ``cls_name``.  If the name
+            # it currently holds still resolves to a *different* live implementation, that
+            # implementation is losing the only link from its config class back to itself: its
+            # config would instantiate ``cls`` instead, and parse_config would resolve the config
+            # under the new name.  A config class inheriting a name it has not been registered
+            # under (what the decorators in util.py produce) is harmless, so stays at INFO.
+            displaced = registry.get(previous_name)
+            if displaced is not None and displaced is not cls:
                 LOGGER.warning(
-                    f"Re-Registering {cls_name} for dataclass {config_class} "
-                    f"previous class_name {config_class.class_name} in {self._unique_name(parent)}."
+                    f"Config class {config_class} is already the config class of "
+                    f"{self._unique_name(displaced)} (class_name {previous_name!r}) in "
+                    f"{self._unique_name(parent)}; registering {cls_name} takes it over, so "
+                    f"{previous_name!r} can no longer be instantiated from it. Give each "
+                    f"implementation its own config class."
                 )
+            else:
+                LOGGER.info(message)
+        elif previous_name in registry and registry[cls_name] is not cls:
+            LOGGER.warning(message)
 
     def add_class_to_registry(self, cls):
         """

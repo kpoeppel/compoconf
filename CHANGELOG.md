@@ -89,6 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `asdict`; strings and bytes are not treated as sequences. (Sets are still passed through
   unchanged, as in `asdict`.)
 
+- Two implementations sharing one config class no longer do so silently. `@register` writes
+  `class_name` onto the config class, so the second registration took the config class over and the
+  first implementation became unreachable from it — `SharedConfig().instantiate(Iface)` always built
+  the later one. That case was logged at `INFO`; it now emits a `WARNING` naming both
+  implementations, while a config class merely *inheriting* a name it was never registered under
+  (what the `util` decorators produce) stays at `INFO`.
+
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with
   `if not callable(arg): raise TypeError`, so resolving such an annotation failed with
