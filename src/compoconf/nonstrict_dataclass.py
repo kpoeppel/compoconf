@@ -125,16 +125,19 @@ class _NonStrictDataclassBase:
         """
         Convert the (frozen) NonStrictDataclass to a dictionary including the extra attributes.
         """
-        # NOTE: extras are *untyped* by contract (see README): use a declared
-        # ``Type | None = None`` field for nested configs that must round-trip.  Dataclass-valued
-        # extras are therefore not supported and are intentionally not recursed into here.
+        # Extras go through the same conversion as declared fields, so the output is serializable
+        # whatever they hold.  What they still do not get is type *reconstruction* on the way back
+        # in: there is no annotation to parse them by, so a set or tuple extra returns as a list and
+        # a Path as a str.  Use a declared ``Type | None = None`` field when the type must survive.
+        # ``use_to_dict=False`` matches the call above and keeps the cycle guard effective.
         d = asdict_patched(self, use_to_dict=False)
         del d["_extras"]
         del d["_non_strict"]
+        converted_extras = asdict_patched(self._extras, use_to_dict=False)
         if extras_key is None:
-            d.update(self._extras)
+            d.update(converted_extras)
         else:
-            d[extras_key] = dict(self._extras)
+            d[extras_key] = converted_extras
         return d
 
 
@@ -147,6 +150,14 @@ class NonStrictDataclass(_NonStrictDataclassBase):
 
     For an immutable variant, inherit from :class:`FrozenNonStrictDataclass` instead and use
     ``@dataclass(init=False, frozen=True)``.
+
+    **Extras dump like declared fields, but do not come back typed.** :func:`asdict` converts
+    extras exactly as it converts declared fields -- enums to their value, ``Path`` / ``datetime`` /
+    ``Decimal`` / ``UUID`` to strings, sets and tuples to lists -- so the output is always
+    JSON/YAML-serializable. What extras do not get is type *reconstruction* on the way back in:
+    there is no annotation to parse them by, so an extra that held a ``set`` or ``tuple`` returns as
+    a ``list`` and one that held a ``Path`` returns as a ``str``. Declare a typed field --
+    ``Type | None = None`` makes it optional -- when the type itself has to survive a round trip.
 
     Example:
 

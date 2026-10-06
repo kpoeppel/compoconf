@@ -117,10 +117,96 @@ def test_asdict_types():
         a: list[int] = field(default_factory=lambda: [1, 2, 3])
         b: tuple[int, str] = (1, "1")
 
-    # A declared tuple field dumps as a list: JSON/YAML have one array type, and the annotation is
-    # what restores the tuple on the way back in.  Extras are untyped plain data by contract and are
-    # passed through unconverted, so the tuple extra ``c`` stays a tuple.
-    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"a": [1, 2, 3], "b": [1, "1"], "c": (2, 3)}
+    # Tuples dump as lists -- declared fields and extras alike, since extras go through the same
+    # conversion. JSON/YAML have one array type; the annotation is what restores the tuple for a
+    # declared field, and an extra has none, so ``c`` comes back as a list rather than a tuple.
+    assert asdict(MyNonStrictDataclass3(c=(2, 3))) == {"a": [1, 2, 3], "b": [1, "1"], "c": [2, 3]}
+
+
+def test_extras_are_converted_like_declared_fields():
+    """An extra must be writable to a file, whatever it holds -- the dump has no annotations in it."""
+    import json  # pylint: disable=C0415
+    from datetime import datetime  # pylint: disable=C0415
+    from decimal import Decimal  # pylint: disable=C0415
+    from enum import Enum  # pylint: disable=C0415
+    from pathlib import Path  # pylint: disable=C0415
+    from uuid import UUID  # pylint: disable=C0415
+
+    class Color(Enum):
+        """Sample enum."""
+
+        RED = "red"
+
+    @dataclass(init=False)
+    class Loose(NonStrictDataclass):
+        """TestClass"""
+
+        declared: int = 0
+
+    dumped = asdict(
+        Loose(
+            tup=(1, 2),
+            st={2, 1},
+            fz=frozenset({1}),
+            path=Path("/a"),
+            when=datetime(2020, 1, 2),
+            dec=Decimal("1.5"),
+            uid=UUID("12345678-1234-5678-1234-567812345678"),
+            color=Color.RED,
+            nested={"k": [{2, 1}, Path("/b")]},
+        )
+    )
+    assert dumped == {
+        "declared": 0,
+        "tup": [1, 2],
+        "st": [1, 2],
+        "fz": [1],
+        "path": "/a",
+        "when": "2020-01-02T00:00:00",
+        "dec": "1.5",
+        "uid": "12345678-1234-5678-1234-567812345678",
+        "color": "red",
+        "nested": {"k": [[1, 2], "/b"]},
+    }
+    assert json.dumps(dumped)
+
+
+def test_extras_come_back_untyped():
+    """The residual limitation: there is no annotation to reconstruct an extra's type from."""
+    from pathlib import Path  # pylint: disable=C0415
+
+    from compoconf import parse_config  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Loose(NonStrictDataclass):
+        """TestClass"""
+
+        declared: int = 0
+
+    original = Loose(tup=(1, 2), st={2, 1}, path=Path("/a"))
+    reparsed = parse_config(Loose, asdict(original))
+    # serializable and stable, but a list and a str rather than a tuple and a Path
+    assert reparsed.tup == [1, 2]  # pylint: disable=E1101
+    assert reparsed.st == [1, 2]  # pylint: disable=E1101
+    assert reparsed.path == "/a"  # pylint: disable=E1101
+    # so dumping is idempotent from here on, which is what matters for writing files
+    assert asdict(parse_config(Loose, asdict(reparsed))) == asdict(reparsed)
+
+
+def test_a_cycle_through_an_extra_is_still_caught():
+    """Extras are converted by a second asdict call, so the recursion guard has to span both."""
+
+    @dataclass(init=False)
+    class Loose(NonStrictDataclass):
+        """TestClass"""
+
+        a: int = 0
+
+    instance = Loose(a=1)
+    instance._extras["loop"] = instance  # pylint: disable=W0212
+
+    with pytest.raises(TypeError):
+        asdict(instance)
 
 
 def test_post_init():

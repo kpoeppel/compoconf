@@ -19,7 +19,8 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
   or did not survive the round trip through one (tuples). They are now lists, sets sorted. This is
   what the dump contract always meant; the annotation is what restores the `tuple`/`set` on the way
   back in, so parsing is unchanged. Code that *indexes* a dumped tuple is unaffected; code that
-  asserts `isinstance(dumped["field"], tuple)` or compares against a golden file is not.
+  asserts `isinstance(dumped["field"], tuple)` or compares against a golden file is not. This now
+  covers undeclared extras on a `NonStrictDataclass` as well, which previously bypassed conversion.
 - **`strict` now applies to nested configs**, not just the outermost one. `strict=True` is the
   default and is unaffected; only callers who explicitly pass `strict=False` see a difference, and
   it is a loosening — configs that previously raised on a nested unknown key now parse.
@@ -173,6 +174,14 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
   it to a file and reading it back yielded a list. As with sets, the annotation is what restores the
   tuple when parsing. (Undeclared extras on a `NonStrictDataclass` are untyped plain data by
   contract and are still passed through unconverted.)
+
+- Undeclared extras on a `NonStrictDataclass` are now converted when dumping, like declared fields.
+  `_to_dict` re-attached the raw `_extras` after conversion, so an extra holding a `set`, `Path`,
+  `Enum`, `Decimal`, `UUID` or `datetime` reached the serializer as a live Python object —
+  `json.dumps` rejected every one of them and `yaml.safe_dump` most — while every declared field
+  serialized fine. Extras still come back from a parse as plain data rather than their original type,
+  since there is no annotation to reconstruct them by; that limitation is now documented in the
+  `NonStrictDataclass` docstring (and so in the API docs) and in the README.
 
 - `Interface.cfgtype` annotations no longer break on Python 3.10. `LazyConfigUnion` and `_LazyOr`
   are used as type annotations, and Python 3.10's `typing._type_check` ends with

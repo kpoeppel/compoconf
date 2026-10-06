@@ -317,9 +317,27 @@ It works with the standard `dataclasses` helpers (`replace`, `asdict`, `astuple`
 
 **Extras are untyped.** Extra attributes are stored as-is and are never type-checked or
 re-typed on parsing. Because of this, **extras must be plain data** (scalars, and
-arbitrarily nested `dict`/`list`/`tuple` of plain data). Storing a dataclass/config as an
-*extra* is **not supported** — it cannot be serialized or round-tripped through the parser,
-since there is no type information to reconstruct it.
+arbitrarily nested `dict`/`list` of plain data). Storing a dataclass/config as an
+*extra* is **not supported** — it cannot be round-tripped through the parser, since there is no
+type information to reconstruct it.
+
+**Extras dump like declared fields, but do not come back typed.** `asdict`/`dump_config` convert
+extras exactly as they convert declared fields — enums to their value,
+`Path`/`datetime`/`date`/`time`/`Decimal`/`UUID` to strings, sets and tuples to lists — so a dump is
+always JSON/YAML-serializable whatever an extra holds. What extras *don't* get is type
+reconstruction on the way back in, since there is no annotation to parse them by:
+
+```python
+cfg = MyConfig(a=1, tags={"b", "a"}, out=Path("/tmp/x"))
+asdict(cfg)                      # -> {"a": 1, ..., "tags": ["a", "b"], "out": "/tmp/x"}   serializable
+parse_config(MyConfig, asdict(cfg)).tags   # -> ["a", "b"]  — a list, not the set it started as
+```
+
+Dumping is still idempotent, so writing and re-reading a config file is stable; it is only the
+first dump that loses the Python type. Declare a typed field when the type itself has to survive.
+
+If a value has to survive a round trip — or just has to be writable to a file — declare it as a
+real field instead of relying on an extra.
 
 If you need a nested, typed config that round-trips, declare it as a real field instead of
 relying on extras. Make it optional by giving it a `Type | None = None` annotation so it is
@@ -347,7 +365,8 @@ non-frozen `NonStrictDataclass`.
   `object.__setattr__`, as with any frozen dataclass.
 - A frozen non-strict dataclass must inherit from `FrozenNonStrictDataclass`; Python forbids a
   frozen subclass of the non-frozen `NonStrictDataclass`.
-- Extras are untyped plain data only (scalars / nested `dict`/`list`/`tuple`); see above.
+- Extras are untyped: they dump to JSON/YAML-safe values like declared fields do, but come back as
+  plain data rather than their original type (a `set` extra returns as a `list`); see above.
 
 ### Util Module
 

@@ -146,6 +146,33 @@ def test_asdict_obeys_the_same_contract():
     _assert_only_serializable_types(compoconf.asdict(config))
 
 
+def test_a_dumped_non_strict_config_also_contains_only_serializable_types():
+    """Extras go through the same conversion, so the invariant holds for them too."""
+    from compoconf import NonStrictDataclass  # pylint: disable=C0415
+
+    @dataclass(init=False)
+    class Loose(NonStrictDataclass):
+        declared: int = 0
+
+    dumped = compoconf.dump_config(
+        Loose(
+            pair=(1, 2),
+            unique={2, 1},
+            frozen=frozenset({"a"}),
+            where=Path("/a"),
+            when=datetime(2020, 1, 2),
+            amount=Decimal("1.5"),
+            ident=UUID("12345678-1234-5678-1234-567812345678"),
+            color=Color.RED,
+            nested={"k": [{2, 1}, Path("/b")]},
+        )
+    )
+    _assert_only_serializable_types(dumped)
+    assert json.dumps(dumped)
+    if yaml is not None:
+        assert yaml.safe_dump(dumped)
+
+
 @pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
 def test_every_supported_shape_dumps_to_serializable_types(shape):
     for data in shape.examples:
