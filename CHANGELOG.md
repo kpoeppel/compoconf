@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- When no member of a union accepts the data, the failure report now ranks a member that failed only
+  in its **own constructor** — a `__post_init__` rejecting the values — ahead of members that failed
+  earlier. Reaching the constructor means every field parsed, so that member came closest. It
+  previously sorted *last*: the message is the user's own, so it carries no `at key` path and scored a
+  depth of 0, as if it had got nowhere. A nested child's validation failure ranks its parent the same
+  way, since the parent got that far. An exact `class_name` match still outranks everything.
+
+  Reporting only — nothing about which member a union resolves to has changed. A member whose
+  `__post_init__` rejects the data is still treated as not matching, so a union still falls through
+  to one that accepts it, as `anyOf` requires.
+
 ## [0.3.1] - 2026-10-06
 
 `0.3.0` was tagged but never published: the release workflow's version check read the wrong value

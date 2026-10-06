@@ -15,6 +15,10 @@ The error therefore surfaces wherever there is no alternative to fall through to
 case that matters in practice: a direct parse, a plain declared field, and -- the common one in
 compoconf -- a ``class_name``-discriminated ``cfgtype`` field, where the discriminator picks one
 member outright so no alternative is ever tried.
+
+When nothing accepts the data, the failure report ranks the members by how close each came, and a
+member that failed only in its own constructor came closest of all: reaching the constructor means
+every one of its fields parsed. Those tests are at the end.
 """
 
 from dataclasses import dataclass, field
@@ -199,6 +203,97 @@ def test_an_unknown_key_means_no_match():
         b: int = 0
 
     assert parse_config(Union[HasA, HasB], {"b": 1}) == HasB(1)
+
+
+# ----------------------------------------------------- ranking the closest match in a failure
+
+
+def test_a_constructor_failure_outranks_a_deeper_field_failure():
+    """Reaching the constructor means every field parsed, so it is the closest match.
+
+    Without this, such a member sorted *last*: its message is the user's own, so it carries no
+    ``at key`` path and scored a depth of 0 -- as if it had got nowhere.
+    """
+
+    @dataclass
+    class InnerLoose:
+        n: str = ""
+
+    @dataclass
+    class ViaValidation:
+        cfg: InnerLoose = field(default_factory=InnerLoose)
+
+        def __post_init__(self):
+            raise ValueError("this model/optimiser combination is not supported")
+
+    @dataclass
+    class InnerStrict:
+        n: int = 0
+
+    @dataclass
+    class ViaDeepField:
+        cfg: InnerStrict = field(default_factory=InnerStrict)
+
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Union[ViaValidation, ViaDeepField], {"cfg": {"n": "x"}}, strict_types=True)
+    tried = str(exc_info.value).split("Tried:")[1]
+    assert tried.index("ViaValidation") < tried.index("ViaDeepField")
+
+
+def test_a_nested_constructor_failure_ranks_its_parent_first():
+    """A child's validation failure means the parent got into that child -- further than a mismatch."""
+
+    @dataclass
+    class HoldsRate:
+        rate: Rate = field(default_factory=Rate)
+
+    @dataclass
+    class NeedsMore:
+        required: int
+        rate: Unbounded = field(default_factory=Unbounded)
+
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Union[NeedsMore, HoldsRate], {"rate": {"value": 5.0}})
+    tried = str(exc_info.value).split("Tried:")[1]
+    assert tried.index("HoldsRate") < tried.index("NeedsMore")
+    assert "rate 5.0 must be in [0, 1]" in tried
+
+
+def test_an_exact_class_name_match_still_outranks_everything():
+    """Ranking by closeness must not displace the discriminator, which is exact rather than a guess."""
+
+    @dataclass
+    class AlphaConfig(ConfigInterface):
+        a: int = 1
+
+    @dataclass
+    class BetaConfig(ConfigInterface):
+        b: int = 1
+
+        def __post_init__(self):
+            raise ValueError("beta is never usable")
+
+    AlphaConfig.class_name = "Alpha"
+    BetaConfig.class_name = "Beta"
+
+    # Beta reaches its constructor; Alpha does not. The class_name says Alpha, so Alpha comes first.
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Union[BetaConfig, AlphaConfig], {"class_name": "Alpha", "wrong": 1})
+    tried = str(exc_info.value).split("Tried:")[1]
+    assert tried.index("AlphaConfig") < tried.index("BetaConfig")
+
+
+def test_ranking_does_not_change_which_member_wins():
+    """The mark is for reporting only; resolution is untouched."""
+    assert parse_config(Union[Rate, Unbounded], {"value": 5.0}) == Unbounded(5.0)
+    assert parse_config(Union[Rate, Unbounded], {"value": 0.5}) == Rate(0.5)
+
+
+def test_the_mark_does_not_appear_in_the_message():
+    with pytest.raises(ValueError) as exc_info:
+        parse_config(Rate, {"value": 5.0})
+    assert str(exc_info.value) == "rate 5.0 must be in [0, 1]"
+    assert "compoconf" not in str(exc_info.value)
 
 
 # pylint: enable=C0115
