@@ -75,7 +75,13 @@ def test_replace_plain_dataclass():
 
 
 def test_replace_non_init_field_raises():
-    """Replacing a genuinely ``init=False`` field raises, matching stdlib."""
+    """Replacing a genuinely ``init=False`` field raises, matching stdlib.
+
+    The exception *type* is version-dependent and deliberately not pinned: CPython raises
+    ``ValueError`` through 3.12 and ``TypeError`` from 3.13, where ``dataclasses.replace`` was
+    reworked onto ``__replace__``. Both messages name ``init=False``, which is the part worth
+    asserting -- that the field is refused rather than quietly assigned.
+    """
 
     @dataclass
     class HasNonInit:
@@ -85,7 +91,7 @@ def test_replace_non_init_field_raises():
         b: int = field(init=False, default=2)
 
     obj = HasNonInit(a=1)
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError), match="init=False"):
         replace(obj, b=5)
 
 
