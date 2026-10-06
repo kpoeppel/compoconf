@@ -39,9 +39,14 @@ jobs:
       # If not using setuptools_scm, ensure version in metadata matches tag.
 
       - name: Verify version matches tag
+        # Reads the [project] version itself rather than grepping for "version = ", which also
+        # matches minversion/target-version elsewhere in the file and silently compared the wrong
+        # value when [project].version was briefly dynamic.  A missing field now fails loudly.
         run: |
-          VERSION=v$(grep "version = " pyproject.toml | cut -d '"' -f 2 | head -n 1)
+          VERSION=v$(python -c "import pathlib, tomllib; \
+            print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
           TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "pyproject version: $VERSION / tag: $TAG_NAME"
           if [[ "$VERSION" != "$TAG_NAME" ]]; then
             echo "Version '$VERSION' in pyproject.toml does not match tag '$TAG_NAME'"
             exit 1

@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-06
+## [0.3.1] - 2026-10-06
+
+`0.3.0` was tagged but never published: the release workflow's version check read the wrong value
+from `pyproject.toml` and failed before the upload step, so no `0.3.0` artifact exists on PyPI. The
+content below is that release, under the version that actually ships.
 
 ### Upgrading from 0.2.x
 
@@ -69,6 +73,14 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
 
 - Python 3.12 and 3.13 are covered by CI, and the package version is single-sourced from
   `compoconf.__version__` so the module and the distribution metadata cannot disagree.
+
+- The release workflow's "Verify version matches tag" step read the version with
+  `grep "version = " pyproject.toml | head -n 1`, which also matches `minversion` and
+  `target-version` elsewhere in the file. It now parses `[project].version` with `tomllib`, so it
+  compares the real field and fails loudly if that field is ever absent instead of silently
+  comparing something else. `[project].version` is correspondingly kept static — it cannot be
+  dynamic if the workflow is to read it — and a test asserts it stays equal to
+  `compoconf.__version__`.
 
 - Removed a stray empty `__init__.py` from the repository root. Because the repository directory is
   itself named `compoconf`, that file made the root an importable (and empty) package of the same
@@ -222,5 +234,5 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
   (`load` / `registered`), the recommended `Type | None = None` pattern for nested typed configs,
   and the "extras are untyped plain data" contract.
 
-[Unreleased]: https://github.com/kpoeppel/compoconf/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/kpoeppel/compoconf/releases/tag/v0.3.0
+[Unreleased]: https://github.com/kpoeppel/compoconf/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kpoeppel/compoconf/releases/tag/v0.3.1

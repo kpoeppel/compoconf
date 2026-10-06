@@ -5,6 +5,7 @@ types a dump may contain.
 """
 
 import json
+import pathlib
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -74,14 +75,50 @@ def test_all_has_no_duplicates():
 
 
 def test_version_is_exposed_and_well_formed():
-    """``__init__.__version__`` is the single source the build reads, so it has to be parseable.
+    """Deliberately not compared against ``importlib.metadata.version``.
 
-    Deliberately not compared against ``importlib.metadata.version``: that reports whatever copy is
-    installed, which says nothing about the source tree and fails loudly on a stale install.
+    That reports whatever copy is installed, which says nothing about the source tree and fails
+    loudly on a stale install.
     """
     assert re.fullmatch(
         r"\d+\.\d+\.\d+(?:[.\-]?(?:a|b|rc|dev|post)\d+)?", compoconf.__version__
     ), f"not a PEP 440 release version: {compoconf.__version__!r}"
+
+
+def _declared_version(pyproject):
+    """Return ``[project].version`` from a pyproject.toml.
+
+    Parsed by hand rather than with ``tomllib``, which is 3.11+ while the package supports 3.10, and
+    deliberately scoped to the ``[project]`` table: a whole-file search for ``version =`` also matches
+    ``minversion`` and ``target-version``, which is the exact mistake this test exists to catch.
+    """
+    table = None
+    for line in pyproject.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            table = stripped
+        elif table == "[project]":
+            match = re.match(r'version\s*=\s*"([^"]+)"', stripped)
+            if match:
+                return match.group(1)
+    raise AssertionError("[project].version not found in pyproject.toml")
+
+
+def test_version_matches_pyproject():
+    """The version is stated twice, so something has to keep the two honest.
+
+    ``[project].version`` cannot be dynamic: the release workflow reads that field to check it
+    against the git tag and refuses to publish on a mismatch. So it is static and duplicated, and
+    this test is what stops the duplicate from drifting -- a bump that updates only one of the two
+    fails here rather than at release time, which is how 0.3.0 was lost.
+    """
+    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if not pyproject.is_file():  # pragma: no cover - running against an installed copy
+        pytest.skip("pyproject.toml is not available next to the installed package")
+    declared = _declared_version(pyproject)
+    assert (
+        declared == compoconf.__version__
+    ), f"pyproject.toml declares {declared!r} but compoconf.__version__ is {compoconf.__version__!r}"
 
 
 # ---------------------------------------------------------------------- the dump value contract

@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "compoconf"
-# Single-sourced from src/compoconf/__init__.py by [tool.hatch.version] below, so the two cannot
-# drift apart.
-dynamic = ["version"]
+# Kept static and in sync with compoconf.__version__ by a test: the release workflow reads this
+# field to check it against the tag, so it cannot be dynamic.
+version = "0.3.1"
 description = "A compositional configuration library for Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,9 +42,6 @@ dev = [
     "mypy>=1.5.0",
     "ruff>=0.12.7",
 ]
-
-[tool.hatch.version]
-path = "src/compoconf/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/compoconf"]
