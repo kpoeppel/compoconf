@@ -74,6 +74,10 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
 - Python 3.12 and 3.13 are covered by CI, and the package version is single-sourced from
   `compoconf.__version__` so the module and the distribution metadata cannot disagree.
 
+- The release workflow's artifact actions move to the Node 24 runtime:
+  `actions/upload-artifact@v4` → `@v6` and `actions/download-artifact@v4` → `@v7`, the earliest
+  majors on `node24`. `actions/checkout@v6` and `actions/setup-python@v6` were already on it.
+
 - The release workflow's "Verify version matches tag" step read the version with
   `grep "version = " pyproject.toml | head -n 1`, which also matches `minversion` and
   `target-version` elsewhere in the file. It now parses `[project].version` with `tomllib`, so it
