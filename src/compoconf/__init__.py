@@ -18,7 +18,7 @@ from .compoconf import (  # pylint: disable=W0406
 )
 from .io_utils import parse_file  # pylint: disable=W0406
 from .nonstrict_dataclass import FrozenNonStrictDataclass, NonStrictDataclass, asdict  # pylint: disable=W0406
-from .parsing import dump_config, parse_config  # pylint: disable=W0406
+from .parsing import clear_parse_cache, dump_config, parse_config  # pylint: disable=W0406
 from .schema import to_json_schema  # pylint: disable=W0406
 from .util import (  # pylint: disable=W0406
     ConfigError,
@@ -32,7 +32,7 @@ from .util import (  # pylint: disable=W0406
     validate_literal_field,
 )
 
-__version__ = "0.2.5"
+__version__ = "0.3.0"
 
 __all__ = [
     "NonStrictDataclass",
@@ -49,6 +49,7 @@ __all__ = [
     "parse_config",
     "parse_file",
     "dump_config",
+    "clear_parse_cache",
     "to_json_schema",
     "partial_call",
     "from_annotations",

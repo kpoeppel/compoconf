@@ -4,6 +4,7 @@ This submodule introduces an adapted dataclass interface that enables a runtime 
 
 import dataclasses
 from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any
@@ -124,16 +125,19 @@ class _NonStrictDataclassBase:
         """
         Convert the (frozen) NonStrictDataclass to a dictionary including the extra attributes.
         """
-        # NOTE: extras are *untyped* by contract (see README): use a declared
-        # ``Type | None = None`` field for nested configs that must round-trip.  Dataclass-valued
-        # extras are therefore not supported and are intentionally not recursed into here.
+        # Extras go through the same conversion as declared fields, so the output is serializable
+        # whatever they hold.  What they still do not get is type *reconstruction* on the way back
+        # in: there is no annotation to parse them by, so a set or tuple extra returns as a list and
+        # a Path as a str.  Use a declared ``Type | None = None`` field when the type must survive.
+        # ``use_to_dict=False`` matches the call above and keeps the cycle guard effective.
         d = asdict_patched(self, use_to_dict=False)
         del d["_extras"]
         del d["_non_strict"]
+        converted_extras = asdict_patched(self._extras, use_to_dict=False)
         if extras_key is None:
-            d.update(self._extras)
+            d.update(converted_extras)
         else:
-            d[extras_key] = dict(self._extras)
+            d[extras_key] = converted_extras
         return d
 
 
@@ -146,6 +150,14 @@ class NonStrictDataclass(_NonStrictDataclassBase):
 
     For an immutable variant, inherit from :class:`FrozenNonStrictDataclass` instead and use
     ``@dataclass(init=False, frozen=True)``.
+
+    **Extras dump like declared fields, but do not come back typed.** :func:`asdict` converts
+    extras exactly as it converts declared fields -- enums to their value, ``Path`` / ``datetime`` /
+    ``Decimal`` / ``UUID`` to strings, sets and tuples to lists -- so the output is always
+    JSON/YAML-serializable. What extras do not get is type *reconstruction* on the way back in:
+    there is no annotation to parse them by, so an extra that held a ``set`` or ``tuple`` returns as
+    a ``list`` and one that held a ``Path`` returns as a ``str``. Declare a typed field --
+    ``Type | None = None`` makes it optional -- when the type itself has to survive a round trip.
 
     Example:
 
@@ -195,6 +207,27 @@ class FrozenNonStrictDataclass(_NonStrictDataclassBase):
     _non_strict: bool = True
 
 
+def _sorted_for_dump(values: list) -> list:
+    """Order the dumped elements of a set so that the output is stable across runs.
+
+    A set has no order of its own, and ``set`` iteration order is hash-randomized for strings, so an
+    unsorted dump would differ from run to run -- which breaks diffing, review and checksums of
+    generated config files. Elements are sorted *after* conversion, since it is the written form that
+    has to be stable. Values that are not mutually comparable (a set of dataclasses dumps to dicts,
+    a ``set[int | str]`` to a mix) fall back to ordering by ``repr``: arbitrary, but deterministic.
+
+    Args:
+        values: Already-converted elements of a set or frozenset.
+
+    Returns:
+        The same elements as a list, in a deterministic order.
+    """
+    try:
+        return sorted(values)
+    except TypeError:
+        return sorted(values, key=repr)
+
+
 def _has_to_dict(o: Any) -> bool:
     """
     Checks for the _to_dict method in the dataclass
@@ -230,13 +263,16 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
     """
     seen = set()  # recursion guard by id()
 
-    def convert(o, use_to_dict: bool = True):  # pylint: disable=too-many-return-statements
+    # One branch per kind of value that needs converting; the chain is the function's whole point.
+    def convert(o, use_to_dict: bool = True):  # pylint: disable=too-many-return-statements,too-many-branches
         oid = id(o)
         if oid in seen:
             # Match stdlib behavior: raise on cycles
             raise TypeError("asdict() should be called on acyclic structures")
-        # Only track container-like or dataclass objects to avoid overhead
-        track = is_dataclass(o) or isinstance(o, (Mapping, Sequence)) and not isinstance(o, (str, bytes, bytearray))
+        # Only track container-like or dataclass objects to avoid overhead.  The str/bytes
+        # exclusion applies to the container test alone, not to the dataclass one -- parenthesized
+        # because `or`/`and` precedence makes that easy to misread.
+        track = is_dataclass(o) or (isinstance(o, (Mapping, Sequence)) and not isinstance(o, (str, bytes, bytearray)))
         if track:
             seen.add(oid)
 
@@ -269,13 +305,16 @@ def asdict_patched(obj, *, dict_factory=dict, use_to_dict=True) -> dict[str, Any
                 # else:
                 return {convert(k): convert(v) for k, v in o.items()}
 
-            # 4) Sequences (but not str/bytes)
+            # 4) Sequences (but not str/bytes).  Tuples become lists: JSON and YAML have one array
+            # type, and a tuple is not it -- a schema validator rejects it and reading the file back
+            # yields a list anyway.  The annotation restores the tuple, and its order is preserved.
             if isinstance(o, Sequence) and not isinstance(o, (str, bytes, bytearray)):
-                # if retain_collection_types:
-                #     return type(o)(convert(v) for v in o)
-                if isinstance(o, tuple):
-                    return tuple((convert(v) for v in o))
                 return [convert(v) for v in o]
+
+            # 4b) Sets -- no JSON/YAML representation of their own, so they become arrays.  The
+            # annotation is what turns the array back into a set, so nothing is lost.
+            if isinstance(o, AbstractSet):
+                return _sorted_for_dump([convert(v) for v in o])
 
             # 5) Base case: leave as-is
             return o

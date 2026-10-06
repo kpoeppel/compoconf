@@ -48,6 +48,94 @@ from compoconf.nonstrict_dataclass import asdict
 
 LOGGER = logging.getLogger(__name__)
 
+# Bumped on every registry mutation.  Parsing caches data derived from the registry (most
+# importantly the resolved members of a ``cfgtype`` union) and compares against this counter to
+# notice when a late ``@register`` -- or a test fixture resetting the registry -- invalidates it.
+_REGISTRY_EPOCH = [0]
+
+
+def registry_epoch() -> int:
+    """Return a counter that changes whenever the registry contents change."""
+    return _REGISTRY_EPOCH[0]
+
+
+class _EpochDict(dict):
+    """A ``dict`` that bumps :func:`registry_epoch` whenever it is mutated.
+
+    Tracking mutation on the container rather than in the registry methods keeps the counter
+    honest even where the registry is manipulated directly (e.g. the test fixture that resets
+    it by popping from ``Registry._registries``).
+
+    Every method bumps *after* delegating, so that a reader which observes the new epoch is
+    guaranteed to also observe the mutation that caused it. Bumping first leaves a window in which
+    the epoch is new but the contents are not: a cache refreshed inside that window would store
+    stale data stamped with the new epoch and never invalidate again. It also means a call that
+    raises (``pop`` of a missing key) does not bump at all, since nothing changed.
+    """
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        _REGISTRY_EPOCH[0] += 1
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        _REGISTRY_EPOCH[0] += 1
+
+    def pop(self, *args):
+        value = super().pop(*args)
+        _REGISTRY_EPOCH[0] += 1
+        return value
+
+    def popitem(self):
+        item = super().popitem()
+        _REGISTRY_EPOCH[0] += 1
+        return item
+
+    def clear(self):
+        super().clear()
+        _REGISTRY_EPOCH[0] += 1
+
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+        _REGISTRY_EPOCH[0] += 1
+
+    def setdefault(self, key, default=None):
+        value = super().setdefault(key, default)
+        _REGISTRY_EPOCH[0] += 1
+        return value
+
+
+_TYPE_HINTS_CACHE: dict = {}
+
+
+def cached_type_hints(obj):
+    """:func:`typing.get_type_hints` with a per-object cache.
+
+    Resolving annotations re-evaluates every annotation expression and is by far the most
+    expensive single step in parsing, yet a class's annotations never change once it is defined.
+    Unresolvable annotations are not cached, so a forward reference that only becomes resolvable
+    later still works on a subsequent call.
+
+    Args:
+        obj: Class, function or module to resolve annotations for.
+
+    Returns:
+        Mapping from name to resolved type annotation.
+    """
+    try:
+        hints = _TYPE_HINTS_CACHE.get(obj)
+    except TypeError:  # unhashable annotation holder -- resolve without caching
+        return get_type_hints(obj)
+    if hints is None:
+        hints = get_type_hints(obj)
+        _TYPE_HINTS_CACHE[obj] = hints
+    return hints
+
+
+def clear_type_hints_cache() -> None:
+    """Drop every entry from the :func:`cached_type_hints` cache."""
+    _TYPE_HINTS_CACHE.clear()
+
 
 class classproperty(property):
     """
@@ -55,12 +143,17 @@ class classproperty(property):
     """
 
     def __get__(self, instance, owner):
-        # Call the classmethod and return its value
+        # Call the classmethod and return its value.  A ``classmethod`` object is not itself
+        # callable, which is why the ``__wrapped__`` branch exists and is the one ``cfgtype`` takes.
         if hasattr(self.fget, "__call__"):
             return self.fget(owner)
         if hasattr(self.fget, "__wrapped__"):
             return self.fget.__wrapped__(owner)
-        return None
+        raise TypeError(
+            f"classproperty on {owner.__name__} was given {self.fget!r}, which is neither callable "
+            "nor a wrapper around a callable. Decorate a classmethod: "
+            "@classproperty followed by @classmethod."
+        )
 
 
 class LazyConfigUnion:
@@ -241,7 +334,7 @@ def _get_config_class(cls: Type) -> Optional[Type]:
     if hasattr(cls, "config_class") and hasattr(cls.config_class, "class_name"):
         config_class = cls.config_class
     if config_class is None and hasattr(cls, "config"):
-        type_hints = get_type_hints(cls)
+        type_hints = cached_type_hints(cls)
         if "config" in type_hints and type_hints["config"] is not Any and type_hints["config"] is not type(None):
             config_class = type_hints["config"]
     return config_class
@@ -320,8 +413,8 @@ class _RegistrySingleton:
 
     def __init__(self):
         LOGGER.debug("Initializing new Registry instance")
-        self._registries = {}
-        self._registry_classes = {}
+        self._registries = _EpochDict()
+        self._registry_classes = _EpochDict()
 
     @staticmethod
     def _unique_name(other_cls):
@@ -339,23 +432,38 @@ class _RegistrySingleton:
                 f"Tried to create registry for {self._unique_name(cls)} that doesn't inherit from "
                 "RegistrableConfigInterface"
             )
-        self._registries[self._unique_name(cls)] = {}
+        self._registries[self._unique_name(cls)] = _EpochDict()
         self._registry_classes[self._unique_name(cls)] = cls
 
     def _reregistration_warnings(self, config_class, cls, cls_name, parent):
-        if isinstance(config_class.class_name, str) and not config_class.class_name == "":
-            if config_class.class_name != cls_name:
-                LOGGER.info(
-                    f"Re-Registering {cls_name} for dataclass {config_class} "
-                    f"previous class_name {config_class.class_name} in {self._unique_name(parent)}."
-                )
-            elif config_class.class_name in self._registries[self._unique_name(parent)] and (
-                self._registries[self._unique_name(parent)][cls_name] is not cls
-            ):
+        previous_name = config_class.class_name
+        if not isinstance(previous_name, str) or previous_name == "":
+            return
+        registry = self._registries[self._unique_name(parent)]
+        message = (
+            f"Re-Registering {cls_name} for dataclass {config_class} "
+            f"previous class_name {previous_name} in {self._unique_name(parent)}."
+        )
+        if previous_name != cls_name:
+            # ``config_class.class_name`` is about to be overwritten with ``cls_name``.  If the name
+            # it currently holds still resolves to a *different* live implementation, that
+            # implementation is losing the only link from its config class back to itself: its
+            # config would instantiate ``cls`` instead, and parse_config would resolve the config
+            # under the new name.  A config class inheriting a name it has not been registered
+            # under (what the decorators in util.py produce) is harmless, so stays at INFO.
+            displaced = registry.get(previous_name)
+            if displaced is not None and displaced is not cls:
                 LOGGER.warning(
-                    f"Re-Registering {cls_name} for dataclass {config_class} "
-                    f"previous class_name {config_class.class_name} in {self._unique_name(parent)}."
+                    f"Config class {config_class} is already the config class of "
+                    f"{self._unique_name(displaced)} (class_name {previous_name!r}) in "
+                    f"{self._unique_name(parent)}; registering {cls_name} takes it over, so "
+                    f"{previous_name!r} can no longer be instantiated from it. Give each "
+                    f"implementation its own config class."
                 )
+            else:
+                LOGGER.info(message)
+        elif previous_name in registry and registry[cls_name] is not cls:
+            LOGGER.warning(message)
 
     def add_class_to_registry(self, cls):
         """

@@ -1,0 +1,176 @@
+"""Round-trip tests: ``parse_config`` and ``dump_config``/``asdict`` must agree.
+
+The two directions are written independently, so they drift apart silently -- a dumped config that
+is not re-parseable, or not serializable at all, only fails much later at the point of writing a
+file. These walk every supported annotation shape and assert the full cycle:
+
+    data -> parse -> dump -> parse -> dump
+
+with the two parsed values equal, the two dumps equal (so dumping is idempotent), and every dump
+accepted by both ``json.dumps`` and ``yaml.safe_dump``.
+"""
+
+import json
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
+from decimal import Decimal
+from pathlib import Path
+from typing import Optional
+
+import pytest  # pylint: disable=E0401
+
+# sibling helper module; mypy does not know pytest puts the tests directory on sys.path
+from sample_configs import SHAPES, Color, register_mixer  # type: ignore[import-not-found]  # pylint: disable=E0401
+
+try:
+    import yaml  # type: ignore[import-untyped]  # pylint: disable=E0401
+except ImportError:  # pragma: no cover - PyYAML is an optional test dependency
+    yaml = None  # type: ignore[assignment]
+
+from compoconf.nonstrict_dataclass import NonStrictDataclass, asdict
+from compoconf.parsing import dump_config, parse_config
+
+# pylint: disable=C0115,C0116,W0212,W0621,W0613
+
+
+def _assert_serializable(dumped):
+    """Both serializers must accept the dump; the YAML half is skipped if PyYAML is absent."""
+    json.dumps(dumped)
+    if yaml is not None:
+        yaml.safe_dump(dumped)
+
+
+def _assert_round_trips(annotation, data):
+    """parse -> dump -> parse -> dump, with both halves agreeing and both dumps serializable."""
+    first = parse_config(annotation, data)
+    dumped = dump_config(first)
+    _assert_serializable(dumped)
+
+    second = parse_config(annotation, dumped)
+    assert second == first, f"value changed across the round trip: {first!r} -> {second!r}"
+    assert type(second) is type(first)  # pylint: disable=C0123
+
+    redumped = dump_config(second)
+    assert redumped == dumped, f"dumping is not idempotent: {dumped!r} -> {redumped!r}"
+    _assert_serializable(redumped)
+
+
+@pytest.mark.parametrize("shape", SHAPES, ids=[s.label for s in SHAPES])
+def test_round_trip(shape):
+    for data in shape.examples:
+        _assert_round_trips(shape.annotation, data)
+
+
+def test_round_trip_of_a_set_field():
+    @dataclass
+    class WithSets:
+        tags: set[str] = field(default_factory=set)
+        ids: frozenset[int] = field(default_factory=frozenset)
+
+    _assert_round_trips(WithSets, {"tags": ["b", "a"], "ids": [2, 1]})
+    parsed = parse_config(WithSets, {"tags": ["b", "a"], "ids": [2, 1]})
+    # the annotation decides which kind comes back out of the array
+    assert isinstance(parsed.tags, set) and isinstance(parsed.ids, frozenset)
+    assert isinstance(parse_config(WithSets, dump_config(parsed)).ids, frozenset)
+
+
+# ---------------------------------------------------------------------- whole-config round trips
+#
+# The interface and its implementations are built per test rather than at import time: other test
+# modules reset the registry through the ``reset_registry`` fixture, which would wipe module-level
+# registrations before these tests ever run.
+
+
+@pytest.fixture
+def stack(reset_registry):
+    """A realistic config tree: cfgtype unions, enums, extension scalars, containers."""
+    # not named ``mixer``: CPython evaluates ``x: ann = val`` by storing val *before* evaluating
+    # ann, so a local shadowing the field name would already be None by then.
+    registered = register_mixer()
+
+    @dataclass
+    class Block:
+        mixer: registered.interface.cfgtype = None
+        name: str = "block"
+        color: Color = Color.RED
+        out: Optional[Path] = None
+
+    @dataclass
+    class Stack:
+        blocks: list[Block] = field(default_factory=list)
+        dims: tuple[int, int] = (1, 1)
+        labels: dict[str, str] = field(default_factory=dict)
+        when: Optional[datetime] = None
+
+    return Stack
+
+
+STACK_DATA = {
+    "blocks": [
+        {"mixer": {"class_name": "Attn", "heads": 4}, "name": "b0", "color": "blue", "out": "/tmp/a"},
+        {"mixer": {"class_name": "Conv", "kernel": 5}, "name": "b1", "color": "red"},
+    ],
+    "dims": [2, 3],
+    "labels": {"x": "1"},
+    "when": "2020-01-02T03:04:05",
+}
+
+
+def test_whole_config_round_trips(stack):
+    _assert_round_trips(stack, STACK_DATA)
+
+
+def test_dumped_config_keeps_the_discriminator(stack):
+    """class_name has to survive the dump, or the union cannot be resolved on the way back."""
+    dumped = dump_config(parse_config(stack, STACK_DATA))
+    assert [block["mixer"]["class_name"] for block in dumped["blocks"]] == ["Attn", "Conv"]
+
+
+def test_round_trip_through_a_json_file(stack, tmp_path):
+    from compoconf import parse_file  # pylint: disable=C0415
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(dump_config(parse_config(stack, STACK_DATA))), encoding="utf-8")
+    assert parse_file(stack, path) == parse_config(stack, STACK_DATA)
+
+
+@pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+def test_round_trip_through_a_yaml_file(stack, tmp_path):
+    from compoconf import parse_file  # pylint: disable=C0415
+
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(dump_config(parse_config(stack, STACK_DATA))), encoding="utf-8")
+    assert parse_file(stack, path) == parse_config(stack, STACK_DATA)
+
+
+def test_non_strict_extras_round_trip():
+    @dataclass(init=False)
+    class Loose(NonStrictDataclass):
+        known: int = 0
+
+    parsed = parse_config(Loose, {"known": 1, "extra": "kept", "nested": {"still": "plain"}})
+    dumped = asdict(parsed)
+    _assert_serializable(dumped)
+    assert dumped["extra"] == "kept"
+    reparsed = parse_config(Loose, dumped)
+    assert reparsed.known == 1
+    assert reparsed.extra == "kept"
+    assert asdict(reparsed) == dumped
+
+
+def test_top_level_scalars_dump_like_asdict():
+    """dump_config and asdict must agree, or a value's dumped form depends on where it sat."""
+    values = [Color.RED, Path("/a"), datetime(2020, 1, 2), date(2020, 1, 2), time(3, 4), Decimal("1.5")]
+    for value in values:
+        assert dump_config(value) == asdict(value)
+    # and inside a plain container, which is what dump_config is documented to take
+    assert dump_config({"c": Color.RED, "p": Path("/a")}) == {"c": "red", "p": "/a"}
+    assert dump_config([Color.BLUE]) == ["blue"]
+    _assert_serializable(dump_config({"c": Color.RED, "p": Path("/a")}))
+
+
+# pylint: enable=C0115
+# pylint: enable=C0116
+# pylint: enable=W0212
+# pylint: enable=W0621
+# pylint: enable=W0613

@@ -35,7 +35,7 @@ class PlainPoint:
 class StrictlyTyped(NonStrictDataclass):
     """A NonStrictDataclass with declared fields and room for extras."""
 
-    a: int
+    a: int  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
     b: str = "default_b"
 
 
@@ -75,7 +75,13 @@ def test_replace_plain_dataclass():
 
 
 def test_replace_non_init_field_raises():
-    """Replacing a genuinely ``init=False`` field raises, matching stdlib."""
+    """Replacing a genuinely ``init=False`` field raises, matching stdlib.
+
+    The exception *type* is version-dependent and deliberately not pinned: CPython raises
+    ``ValueError`` through 3.12 and ``TypeError`` from 3.13, where ``dataclasses.replace`` was
+    reworked onto ``__replace__``. Both messages name ``init=False``, which is the part worth
+    asserting -- that the field is refused rather than quietly assigned.
+    """
 
     @dataclass
     class HasNonInit:
@@ -85,7 +91,7 @@ def test_replace_non_init_field_raises():
         b: int = field(init=False, default=2)
 
     obj = HasNonInit(a=1)
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError), match="init=False"):
         replace(obj, b=5)
 
 
@@ -302,7 +308,7 @@ def test_frozen_subclass_of_mutable_base_is_rejected():
     with pytest.raises(TypeError):
 
         @dataclass(init=False, frozen=True)
-        class _Frozen(NonStrictDataclass):
+        class _Frozen(NonStrictDataclass):  # type: ignore[misc]  # the rejection is the test
             a: int = 1
 
 
@@ -351,7 +357,7 @@ def test_initvar_positional_and_required():
     class RequiredInitVar(NonStrictDataclass):
         """An InitVar with no default is a required argument."""
 
-        seed: InitVar[int]
+        seed: InitVar[int]  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
         out: int = 0
 
         def __post_init__(self, seed):  # pylint: disable=arguments-differ
@@ -390,7 +396,7 @@ def test_frozen_initvar_is_supported():
 class FrozenTyped(FrozenNonStrictDataclass):
     """An immutable NonStrict dataclass with declared fields and room for extras."""
 
-    a: int
+    a: int  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
     b: str = "default_b"
 
 

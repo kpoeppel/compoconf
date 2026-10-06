@@ -115,7 +115,8 @@ def test_configuration_parsing_extended(reset_registry):
         def __init__(self, config: TestConfigAggregation4):
             super().__init__(config)
             self.config = config
-            self.submodule = self.config.submodule.instantiate(TestInterface2)
+            # mypy cannot see through the lazily resolved cfgtype union
+            self.submodule = self.config.submodule.instantiate(TestInterface2)  # type: ignore[attr-defined]
 
     with pytest.raises(KeyError, match="Cannot resolve dataclass"):
         config = {"submodule": {"class_name": "TestClass"}}
