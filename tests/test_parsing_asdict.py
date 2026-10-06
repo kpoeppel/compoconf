@@ -17,7 +17,7 @@ def test_parse_config_with_non_strict_dataclass():
 
     @dataclass(init=False)
     class MyNonStrictConfig(NonStrictDataclass):
-        typed_field: int
+        typed_field: int  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
         default_field: str = "default"
 
     # Data with typed fields and extra untyped fields

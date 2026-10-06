@@ -336,7 +336,8 @@ def test_field_shadowing_an_inherited_attribute_is_rejected():
 
     @dataclass
     class ShadowsMethod(ConfigInterface):
-        instantiate: int  # no default written, but ConfigInterface.instantiate exists
+        # shadowing the base method on purpose -- that is what the test asserts is rejected
+        instantiate: int  # type: ignore[assignment]
 
     with pytest.raises(TypeError, match="shadows the inherited attribute"):
         parse_config(ShadowsMethod, {})
@@ -347,7 +348,7 @@ def test_field_shadowing_with_an_explicit_default_is_allowed():
 
     @dataclass
     class Deliberate(ConfigInterface):
-        instantiate: int = 5
+        instantiate: int = 5  # type: ignore[assignment]  # deliberate, see above
 
     assert parse_config(Deliberate, {}).instantiate == 5
     assert parse_config(Deliberate, {"instantiate": 7}).instantiate == 7

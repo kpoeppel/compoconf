@@ -19,7 +19,7 @@ def test_non_strict_dataclass_basic_instantiation():
     class MyNonStrictDataclass(NonStrictDataclass):
         """TestClass"""
 
-        a: int
+        a: int  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
         b: str = "default_b"
 
     # Test instantiation with typed and untyped fields
@@ -233,7 +233,7 @@ def test_non_strict_dataclass_to_dict():
     class MyNonStrictDataclass2(NonStrictDataclass):
         """TestClass"""
 
-        a: int
+        a: int  # type: ignore[misc]  # init=False: no __init__ generated, so field order is free
         b: str = "default_b"
 
     instance = MyNonStrictDataclass2(a=1, c="extra_c", d=3.14)

@@ -70,6 +70,13 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
 - Python 3.12 and 3.13 are covered by CI, and the package version is single-sourced from
   `compoconf.__version__` so the module and the distribution metadata cannot disagree.
 
+- Removed a stray empty `__init__.py` from the repository root. Because the repository directory is
+  itself named `compoconf`, that file made the root an importable (and empty) package of the same
+  name, which shadowed `src/compoconf` for any tool that put the repository's parent on `sys.path`.
+  It silenced `mypy` across the whole test suite — 0 reported errors became 10 real ones once it was
+  gone — and broke `pylint` under `pre-commit run --all-files`. Not shipped in any artifact, so this
+  affects development only.
+
 ### Performance
 
 - `parse_config` now *compiles* each type annotation into a cached parser the first time it sees
