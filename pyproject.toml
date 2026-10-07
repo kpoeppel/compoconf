@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "compoconf"
 # Kept static and in sync with compoconf.__version__ by a test: the release workflow reads this
 # field to check it against the tag, so it cannot be dynamic.
-version = "0.3.1"
+version = "0.3.2"
 description = "A compositional configuration library for Python"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-07
+
 ### Changed
 
 - When no member of a union accepts the data, the failure report now ranks a member that failed only
@@ -19,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reporting only — nothing about which member a union resolves to has changed. A member whose
   `__post_init__` rejects the data is still treated as not matching, so a union still falls through
   to one that accepts it, as `anyOf` requires.
+
+### Documentation
+
+- The README's OmegaConf section now shows composition and command-line overrides end to end:
+  `OmegaConf.merge` for base-plus-variant, `OmegaConf.update` for dotted overrides (including into
+  lists, where `from_dotlist` does not work), then straight into `parse_config`, which coerces
+  string values via the annotations. CompoConf provides no merge or override API of its own because
+  this already works. Also documents why changing an already-parsed config should go back through
+  `dump_config` rather than `dataclasses.replace`, which re-runs `__post_init__` on derived state.
 
 ## [0.3.1] - 2026-10-06
 
@@ -251,5 +262,6 @@ Mostly additive, with three behaviour changes worth checking before you upgrade:
   (`load` / `registered`), the recommended `Type | None = None` pattern for nested typed configs,
   and the "extras are untyped plain data" contract.
 
-[Unreleased]: https://github.com/kpoeppel/compoconf/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/kpoeppel/compoconf/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/kpoeppel/compoconf/releases/tag/v0.3.2
 [0.3.1]: https://github.com/kpoeppel/compoconf/releases/tag/v0.3.1

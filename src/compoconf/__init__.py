@@ -32,7 +32,7 @@ from .util import (  # pylint: disable=W0406
     validate_literal_field,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "NonStrictDataclass",
