@@ -186,6 +186,49 @@ conf = OmegaConf.load('config.yaml')
 config = parse_config(ModelConfig, conf)
 ```
 
+#### Composition and command-line overrides
+
+CompoConf deliberately provides no merge or override API of its own: OmegaConf already does that
+part, it operates on plain data, and `parse_config` consumes its `DictConfig`/`ListConfig` directly.
+So a base-plus-variant-plus-CLI workflow needs no extra machinery:
+
+```python
+from omegaconf import OmegaConf
+
+cfg = OmegaConf.merge(
+    OmegaConf.load("configs/base.yaml"),
+    OmegaConf.load("configs/large.yaml"),      # composition: later files win
+)
+
+for override in ["blocks.0.mixer.heads=32", "lr=3e-4"]:        # e.g. from sys.argv[1:]
+    path, _, value = override.partition("=")
+    OmegaConf.update(cfg, path, value, merge=True)
+
+config = parse_config(StackConfig, cfg)        # typed, validated, class_name resolved
+```
+
+Two things worth knowing:
+
+- **Use `OmegaConf.update`, not `OmegaConf.from_dotlist`, for overrides.** `from_dotlist` turns
+  `blocks.0.heads=32` into a *mapping* keyed `"0"`, so merging it onto a config whose `blocks` is a
+  list fails with `Cannot merge DictConfig with ListConfig`. `update` handles list indices.
+- **Override values can stay strings.** `"32"` above becomes an `int` because the annotation says
+  `int`, and `"3e-4"` becomes a `float` — the same coercion every other input gets. Pass
+  `strict_types=True` to `parse_config` if you would rather reject mismatches than coerce them.
+
+To change an *already parsed* config, go back through plain data rather than mutating the object
+tree:
+
+```python
+updated = parse_config(StackConfig, overridden(dump_config(config)))
+```
+
+`dump_config` output is always re-parseable, so this revalidates the whole tree exactly once.
+Rebuilding a nested config in place with `dataclasses.replace` is **not** equivalent: it re-runs
+every rebuilt config's `__post_init__` on already-derived state, which double-applies a
+`__post_init__` that appends to a field and leaves a stale value where one guards against
+re-deriving.
+
 ### Registry System
 
 The registry system allows for dynamic class instantiation based on configuration:
