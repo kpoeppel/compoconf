@@ -144,23 +144,48 @@ def _failure_depth(error) -> int:
     the user meant. For a nested failure the deepest path mentioned anywhere in the message counts,
     so a member that failed three levels down outranks one that was rejected on its own key set.
 
-    An error that does not carry a key path (a ``__post_init__`` raising on its own, say) scores 0
-    and is ordered by message length instead.
+    An error that does not carry a key path scores 0.  A ``__post_init__`` raising on its own is the
+    notable case -- the message is the user's, so there is no path in it -- which is why reaching the
+    constructor is tracked separately by :func:`_mark_reached_construction` and ranked ahead of this.
     """
     return max((path.count(".") + 1 for path in _AT_KEY_RE.findall(str(error)) if path), default=0)
+
+
+# Set on an exception raised by a dataclass's own constructor, which is reached only once the key set
+# has fitted *and* every field has parsed -- so it marks the member that got furthest into the data.
+# Nothing else about the exception changes: it is re-raised as-is, the union still catches it, and
+# fall-through to a member that does accept the data is unaffected.  The mark exists purely so the
+# failure report can name the closest match, which is otherwise invisible: a ``__post_init__``
+# message carries no key path, so it would score depth 0 and sort as if it had got nowhere.
+_REACHED_CONSTRUCTION = "__compoconf_reached_construction__"
+
+
+def _mark_reached_construction(error: BaseException) -> None:
+    """Record that this error came from constructing a member, not from parsing its fields."""
+    try:
+        setattr(error, _REACHED_CONSTRUCTION, True)
+    except (AttributeError, TypeError):  # pragma: no cover - exception types using __slots__
+        pass  # unmarkable, so it simply ranks by depth like any other failure
+
+
+def _reached_construction(error: BaseException) -> bool:
+    """Whether ``error`` was raised while constructing a member whose fields had all parsed."""
+    return getattr(error, _REACHED_CONSTRUCTION, False) is True
 
 
 def _union_error(union_types, errors, data, key_history):
     """Build the (lazily rendered) ``ValueError`` for a union where no member accepted the data."""
 
     def render():
-        # Sort: class_name match first (the member the user most likely intended), then the member
+        # Sort by how close each member came: an exact class_name match first, then the members
+        # whose fields all parsed and which failed only in their own constructor, then the member
         # that got deepest into the data, then the shortest message as a stable tie-break.
         data_class_name = data.get("class_name") if isinstance(data, dict) else None
         ordered = sorted(
             errors,
             key=lambda opt_err: (
                 not (hasattr(opt_err[0], "class_name") and opt_err[0].class_name == data_class_name),
+                not _reached_construction(opt_err[1]),
                 -_failure_depth(opt_err[1]),
                 len(str(opt_err[1])),
             ),
@@ -450,7 +475,9 @@ def _resolve_by_class_name(entry, class_name, strict, strict_types):
     return resolved[1]
 
 
-def _make_dataclass_parser(cls, strict: bool, strict_types: bool):  # noqa: C901
+# Long by nature: it reads everything about the class once, then closes over it.  Splitting the
+# body would move statements behind a call on the hot path for no gain.
+def _make_dataclass_parser(cls, strict: bool, strict_types: bool):  # noqa: C901  # pylint: disable=R0915
     """Compile a parser for a dataclass (or ``dict`` subclass such as a ``TypedDict``)."""
     _check_shadowed_fields(cls)
     accepts_none = _accepts_none(cls)
@@ -530,7 +557,14 @@ def _make_dataclass_parser(cls, strict: bool, strict_types: bool):  # noqa: C901
                 if key not in values:
                     values[key] = data[key]
 
-        return cls(**values)
+        # Reaching here means the data matched: the key set fitted and every field parsed.  Mark
+        # anything the constructor raises so a failure report can rank this member as the closest,
+        # then re-raise it untouched -- the union must still be free to try the next member.
+        try:
+            return cls(**values)
+        except Exception as exc:
+            _mark_reached_construction(exc)
+            raise
 
     return parse
 
